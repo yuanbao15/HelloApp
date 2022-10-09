@@ -1,0 +1,104 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport"
+        content="maximum-scale=1.0, minimum-scale=1.0, user-scalable=0, initial-scale=1.0, width=device-width" />
+    <meta name="format-detection" content="telephone=no, email=no, date=no, address=no">
+    <title>Hello APP</title>
+    <!-- yb 20221008 用于菜单导航，选择后再跳转到对应页面 -->
+    <link rel="stylesheet" type="text/css" href="../css/api.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui.css" />
+    <style>
+        label {
+            margin: 10px;
+            font-size: 24px;
+        }
+
+        ul {
+            margin-bottom: 10px;
+        }
+
+        ul li {
+            margin: 5px 0px;
+            padding: 5px;
+            color: #000;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="aui-content aui-margin-b-15">
+        <ul class="aui-list aui-list-in">
+            <li class="aui-list-header">
+                YB-功能测试
+            </li>
+            <li class="aui-list-item" tapmode onclick="openWin('test_uhf_nfc')">
+                <div class="aui-list-item-inner aui-list-item-arrow">
+                    TEST-自定义模块UHF+NFC
+                </div>
+            </li>
+            <li class="aui-list-item" tapmode onclick="openWin('test_yuanbao_voice')">
+                <div class="aui-list-item-inner aui-list-item-arrow">
+                    TEST-自定义模块-YB语音唤醒识别
+                </div>
+            </li>
+            <li class="aui-list-item" tapmode onclick="openWin('test_voice_speak')">
+                <div class="aui-list-item-inner aui-list-item-arrow">
+                    TEST-自定义模块-离线语音播报
+                </div>
+            </li>
+            <li class="aui-list-item" tapmode onclick="openWin('api_test_ifly_voice')">
+                <div class="aui-list-item-inner aui-list-item-arrow">
+                    TEST-测试API讯飞语音模块-未处理
+                </div>
+            </li>
+            <li class="aui-list-item" tapmode onclick="openWin('api_test_permission')">
+                <div class="aui-list-item-inner aui-list-item-arrow">
+                    TEST-测试API权限管理
+                </div>
+            </li>
+        </ul>
+    </div>
+
+
+</body>
+<script type="text/javascript" src="../script/api.js"></script>
+<script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
+<script type="text/javascript" src="../script/doT.min.js"></script>
+<script type="text/javascript" src="../script/public.js"></script>
+<script type="text/javascript">
+
+
+    apiready = function () {
+
+    }
+
+    // 打开页面进行跳转
+    function openWin(pageName) {
+        // api.openWin({
+        //     name: pageName,
+        //     url: './' + pageName + '.html',
+        //     pageParam: {
+        //         name: 'test'
+        //     }
+        // });
+
+        // 增加一个边框包起
+        api.openWin({
+            name : 'about_win',
+            url : 'about_win.html',
+            pageParam : {
+                url : './' + pageName + '.html',
+                title : "测试"
+            }
+        });
+    }
+
+
+
+</script>
+
+</html>

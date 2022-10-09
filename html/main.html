@@ -1,0 +1,227 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="maximum-scale=1.0, minimum-scale=1.0, user-scalable=0, initial-scale=1.0, width=device-width" />
+    <meta name="format-detection" content="telephone=no, email=no, date=no, address=no">
+    <title>Hello APP</title>
+    <link rel="stylesheet" type="text/css" href="../css/api.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui.css" />
+    <style>
+        label {
+            margin: 10px;
+            font-size: 24px;
+        }
+
+        ul {
+            margin-bottom: 10px;
+        }
+
+        ul li {
+            margin: 5px 10px;
+            padding: 5px;
+            color: #000;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+
+<body>
+    <div>testUHF_I6310</div>
+    <div class="aui-content" >
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="展示读取到的信息" id="read-info_I6310"/>
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testReadUHF_I6310()">
+                    读取UHF_I6310
+                </div>
+            </div>
+        </div>
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="要写入的信息" id="write-info_I6310"/>
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testWriteUHF_I6310()">
+                    写入UHF_I6310
+                </div>
+            </div>
+        </div>
+        <div class="aui-btn-row">
+            <div class="aui-btn aui-btn-success aui-btn-block" onclick="testActivity_I6310()">
+                打开测试页面UHF_I6310
+            </div>
+        </div>
+    </div>
+
+    <div>testUHF</div>
+    <div class="aui-content" >
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="展示读取到的信息" id="read-info"/>
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testReadUHF()">
+                    读取UHF
+                </div>
+            </div>
+        </div>
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="要写入的信息" id="write-info"/>
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testWriteUHF()">
+                    写入UHF
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id='title' >testNFC</div>
+    <div class="aui-content" >
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="展示读取到的信息" id="nfcread-info"/>
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testReadNFC()">
+                    读取NFC
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="aui-btn-row">
+        <div class="aui-btn aui-btn-success aui-btn-block" onclick="testAudio()">
+            语音test
+        </div>
+    </div>
+
+</body>
+<script type="text/javascript" src="../script/api.js"></script>
+<script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
+<script type="text/javascript" src="../script/doT.min.js"></script>
+<script type="text/javascript" src="../script/public.js"></script>
+<script type="text/javascript">
+
+    var moduleUHF = null;
+    var moduleNFC = null;
+    var audioModule = null;
+    var moduleUHF_I6310 = null;
+    apiready = function(){
+        moduleUHF = api.require('moduleUHF');
+        moduleNFC = api.require('moduleNFC');
+        audioModule = api.require("OtherOffLineSpeakModule");
+        moduleUHF_I6310 = api.require('moduleUHF_I6310');
+    }
+
+    // UHF_I6310
+    function testReadUHF_I6310(){
+        console.log("-------here 1");
+        var params = {name : 'yb'};
+        moduleUHF_I6310.readUHF(params, function(ret, err){
+            console.log("-------here 2");
+            if (ret) {
+                var data = ret.data;
+                $("#read-info_I6310").val(JSON.stringify(data));
+                // alert(JSON.stringify(data));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+    function testWriteUHF_I6310(){
+        console.log("-------here 3");
+        var params = {
+            str : $("#write-info_I6310").val()
+        };
+        moduleUHF_I6310.writeUHF(params, function(ret, err){
+            console.log("-------here 4");
+            if (ret) {
+                console.log(JSON.stringify(ret.data));
+                // alert(JSON.stringify(data));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+    function testActivity_I6310(){
+        var params = {
+        };
+        moduleUHF_I6310.startActivity(params);
+    }
+
+    // UHF
+    function testReadUHF(){
+        console.log("-------here 1");
+        var params = {name : 'yb'};
+		moduleUHF.readUHF(params, function(ret, err){
+            console.log("-------here 2");
+            if (ret) {
+                var data = ret.data;
+                $("#read-info").val(JSON.stringify(data));
+                // alert(JSON.stringify(data));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+    function testWriteUHF(){
+        console.log("-------here 3");
+        var params = {
+            str : $("#write-info").val()
+        };
+        moduleUHF.writeUHF(params, function(ret, err){
+            console.log("-------here 4");
+            if (ret) {
+                console.log(JSON.stringify(ret.data));
+                // alert(JSON.stringify(data));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+    function testReadNFC(){
+        console.log("-------here 1");
+        var params = {name : 'yb'};
+		moduleNFC.readNFC(params, function(ret, err){
+            console.log("-------here 2");
+            if (ret) {
+                var data = ret.data;
+                $("#nfcread-info").val(JSON.stringify(data));
+                // alert(JSON.stringify(data));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+    function testAudio(){
+        console.log("-------here 1");
+        var data = {
+            text:'你要播报的文字内容'
+        };
+        console.log("-------here 2");
+        audioModule.speak(data, function(ret, err){
+            console.log("-------here 3");
+            if (err) {
+                  alert(JSON.stringify(err));
+            }
+        });
+    }
+</script>
+
+</html>

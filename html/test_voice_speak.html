@@ -1,0 +1,111 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="maximum-scale=1.0, minimum-scale=1.0, user-scalable=0, initial-scale=1.0, width=device-width" />
+    <meta name="format-detection" content="telephone=no, email=no, date=no, address=no">
+    <title>TEST离线语音播报</title>
+    <link rel="stylesheet" type="text/css" href="../css/api.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui.css" />
+    <style>
+        p {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div>1、测试语音播报</div>
+    <div class="aui-content-padded" >
+        <div class="aui-form">
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testVoiceSpeak('测试语音播报')">
+                    直接播报
+                </div>
+            </div>
+        </div>
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="要播报的内容" id="voice_text"/>
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testVoiceSpeakDIY()">
+                    播报上面的内容
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+<script type="text/javascript" src="../script/api.js"></script>
+<script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
+<script type="text/javascript" src="../script/public.js"></script>
+<script type="text/javascript">
+
+    var audioModule = null;
+    apiready = function(){
+        audioModule = api.require("OtherOffLineSpeakModule");
+        checkPhonePermission();
+    }
+
+    function testVoiceSpeakDIY(){
+        console.log("-------here 3");
+        var value = $("#voice_text").val();
+        testVoiceSpeak(value);
+    }
+
+
+    function testVoiceSpeak(value){
+        console.log("-------here 1");
+        console.log("-------value:" + value);
+
+        checkPhonePermission();
+        var data = {
+            text: value
+        };
+        audioModule.speak(data, function(ret, err){
+            console.log("-------here 2");
+            
+            if (err) {
+                  alert(JSON.stringify(err));
+            }
+        });
+        console.log("-------here 3");
+    }
+
+
+    // 权限的相关操作：权限的判断、申请
+    function checkPhonePermission(){
+        var permission = 'phone';
+        var resultList = api.hasPermission({
+            list: [permission]
+        });
+        if (resultList[0].granted) {
+            // 已授权，可以继续下一步操作
+            console.log("-------已授权");
+        } else {
+            api.confirm({
+                msg: '应用需要您的授权才能支持语言播报',
+                buttons: ['取消', '去设置']
+            }, function(ret) {
+                console.log("-------" +JSON.stringify(ret));
+                if (ret.buttonIndex == 2) {
+                    api.requestPermission({
+                        list: [permission],
+                    }, function(res) {
+                        console.log("-------" +JSON.stringify(res));
+                        if (res.list[0].granted) {
+                            // 已授权，可以继续下一步操作
+                            console.log("-------申请后，已授权");
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+</script>
+
+</html>

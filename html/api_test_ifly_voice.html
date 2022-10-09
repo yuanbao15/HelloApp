@@ -1,0 +1,250 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="maximum-scale=1.0, minimum-scale=1.0, user-scalable=0, initial-scale=1.0, width=device-width" />
+    <meta name="format-detection" content="telephone=no, email=no, date=no, address=no">
+    <title>测试APICLOUD提供的讯飞语音模块</title>
+    <link rel="stylesheet" type="text/css" href="../css/api.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui.2.0.css" />
+    <style>
+        /*button {
+            margin: 5px 10px;
+            padding: 5px;
+        }*/
+
+        .btn {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            height: 50px;
+            background: #eee;
+        }
+
+        .btn input {
+            width: 100%;
+            height: 100%;
+        }
+
+        .listen_gif_div {
+            /*display:flex;
+            justify-content:center;
+            align-items:center;*/
+            position:absolute;
+            left:50%;
+            top:50%;
+            transform:translateX(-50%) translateY(-50%);
+        }
+
+        p {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <script id="contentTemplate" type="text/x-dot-template">
+        <div class="aui-chat-item aui-chat-left">
+            <div class="aui-chat-media" >
+                <img src="../image/yuanbao2.png" />
+            </div>
+            <div class="aui-chat-inner">
+                <div class="aui-chat-name">yuanbao</div>
+                <div class="aui-chat-content">
+                    <div class="aui-chat-arrow"></div>
+                    {{=it.talktext}}
+                </div>
+            </div>
+        </div>
+    </script>
+
+    <div>
+        <section id="cont" class="aui-chat">
+        </section>
+    </div>
+
+    <div class="listen_gif_div">
+        <img src="../image/listen.gif" id="listen_gif" style='display:none' width="150px" hight="150px">
+    </div>
+
+    <div class="btn" >
+        <p><input type="button" name="" id="press_btn" value="按住说话"><p>
+    </div>
+
+    <!-- <button type="button" onclick="fnrecord()" name="button">fnrecord</button>
+    <button type="button" onclick="fnstopRecord()" name="button">fnstopRecord</button>
+    <button type="button" onclick="fncancelRecord()" name="button">fncancelRecord</button>
+    <button type="button" onclick="fnaddRecordHUD()" name="button">fnaddRecordHUD</button>
+    <button type="button" onclick="fnshowRecordHUD()" name="button">fnshowRecordHUD</button>
+    <button type="button" onclick="fnhideRecordHUD()" name="button">fnhideRecordHUD</button>
+    <button type="button" onclick="fnread()" name="button">fnread</button>
+    <button type="button" onclick="fnstopRead()" name="button">fnstopRead</button>
+    <button type="button" onclick="fnpauseRead()" name="button">fnpauseRead</button>
+    <button type="button" onclick="fnresumeRead()" name="button">fnresumeRead</button> -->
+</body>
+<script type="text/javascript" src="../script/api.js"></script>
+<script type="text/javascript" src="../script/dotmin.js"></script>
+<script type="text/javascript">
+    var btnVoice = document.getElementById("press_btn"); // 录音按钮
+    var listenGif = document.getElementById("listen_gif"); // 录音时展示的图片
+    var tStart = 0;
+    var tEnd = 0;
+    var tMove = 0;
+    var iflyRecognition = null; // 语音模块
+
+    apiready = function() {
+        iflyRecognition = api.require('iflyRecognition');
+        iflyRecognition.createUtility({
+            //ios_appid: '',      // 填写讯飞平台上获得的appid
+            android_appid: '5cad791f'   // 填写讯飞平台上获得的appid
+        }, function(ret, err) {
+            console.log("----ifly初始化");
+            if (ret.status) {
+                api.toast({
+                    msg: '语音初始化成功',
+                    duration: 3000,
+                    location: 'top'
+                });
+            } else {
+                api.toast({
+                    msg: '语音初始化失败',
+                    duration: 3000,
+                    location: 'top'
+                });
+            }
+        });
+
+        // 语音按钮监听开启
+        fninitEventListener();
+    };
+
+    // 按钮监听操作
+    function fninitEventListener() {
+        btnVoice.addEventListener("touchstart", function(event) {
+            // listenGif.style.display = ""; // 展示录音动图
+            event.preventDefault();
+            tStart = 0;
+            tStart = event.touches[0].pageY;
+            btnVoice.value = '松开结束';
+            fnrecord(); // 开始记录语音
+        });
+        btnVoice.addEventListener("touchmove", function(event) {
+            event.preventDefault();
+            tMove = 0;
+            tMove = event.targetTouches[0].pageY;
+            // 判定是否是上滑然后作取消操作
+            if (tStart - tMove < 100) {
+                btnVoice.value = '松开结束';
+            } else {
+                btnVoice.value = '松开手指，取消发送';
+            }
+        });
+        btnVoice.addEventListener("touchend", function(event) {
+            // listenGif.style.display = "none"; // 隐藏录音动图
+            event.preventDefault();
+            tEnd = 0;
+            tEnd = event.changedTouches[0].pageY;
+            btnVoice.value = '按住说话';
+
+        });
+    };
+
+    function fnrecord() {
+        var flag = true;
+        iflyRecognition.record({
+            vadbos: 5000,
+            vadeos: 5000,
+            rate: 16000,
+            asrptt: 1,
+            audioPath: 'fs://speechRecogniser/speech.pcm'
+        }, function(ret, err) {
+            if (ret.status) {
+                if (flag) {
+                    wordStr = ret.wordStr;
+                    fndoTempt(wordStr);
+                    flag = false;
+                }
+            } else {
+                api.alert({
+                    msg: err.msg
+                });
+            }
+        });
+    }
+
+    function fndoTempt(wordStr) {
+        var data = {
+            "talktext": wordStr,
+        };
+        var conttemp = doT.template(document.getElementById('contentTemplate').innerHTML);
+        var contentSection = document.getElementById('cont');
+        $api.append(contentSection, conttemp(data)); // 将语音解析出的文字按格式填充进去
+        api.parseTapmode();
+    }
+
+    function fnstopRecord() {
+        iflyRecognition.stopRecord();
+    }
+
+    function fncancelRecord() {
+        iflyRecognition.cancelRecord();
+    }
+
+    function fnaddRecordHUD() {
+        iflyRecognition.addRecordHUD({
+            centerX: 160,
+            centerY: 120,
+            radius: 80,
+            transparentR: 40,
+            bg: '#666',
+            fixedOn: api.frameName,
+            fixed: false
+        }, function(ret, err) {
+            var volume = ret.volume;
+        });
+    }
+
+    function fnshowRecordHUD() {
+        iflyRecognition.showRecordHUD();
+    }
+
+    function fnhideRecordHUD() {
+        iflyRecognition.hideRecordHUD();
+    }
+
+    function fnread() {
+        iflyRecognition.read({
+            readStr: '一行白鹭上青天，两只黄鹂鸣翠柳',
+            speed: 60,
+            volume: 60,
+            voice: 1,
+            rate: 16000,
+            audioPath: 'fs://speechRecogniser/read.mp3'
+        }, function(ret, err) {
+            if (ret.status) {
+                ret.speakProgress
+            } else {
+                api.alert({
+                    msg: err.msg
+                });
+            }
+        });
+    }
+
+    function fnstopRead() {
+        iflyRecognition.stopRead();
+    }
+
+    function fnpauseRead() {
+        iflyRecognition.pauseRead();
+    }
+
+    function fnresumeRead() {
+        iflyRecognition.resumeRead();
+    }
+
+</script>
+
+</html>

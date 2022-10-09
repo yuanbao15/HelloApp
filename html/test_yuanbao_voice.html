@@ -1,0 +1,406 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport"
+        content="maximum-scale=1.0, minimum-scale=1.0, user-scalable=0, initial-scale=1.0, width=device-width" />
+    <meta name="format-detection" content="telephone=no, email=no, date=no, address=no">
+    <title>元宝语音测试</title>
+    <link rel="stylesheet" type="text/css" href="../css/api.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui-slide.css" />
+    <link rel="stylesheet" type="text/css" href="../css/swiper.min.css" />
+    <style>
+        p {
+            margin-bottom: 0.5rem;
+        }
+
+        .listen_gif_div {
+            /*display:flex;
+            justify-content:center;
+            align-items:center;*/
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translateX(-50%) translateY(-50%);
+        }
+
+        .voice_btn_div {
+            position: fixed;
+            width: 50px;
+            height: 50px;
+            right: 10px;
+            bottom: 20px;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .swiper-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .swiper-slide {
+            text-align: center;
+            font-size: 14px;
+            background: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <div id='title'>YB语音模块等等</div>
+    <div class="aui-content-padded">
+        <div>1. 关于分页滚动</div>
+        <div id="id_aui_slide">
+            <div class="aui-slide-wrap" id="id_banner">
+            </div>
+            <div class="aui-slide-page-wrap">
+                <!--分页容器-->
+            </div>
+        </div>
+
+        <div class="swiper-container">
+            <div class="swiper-wrapper" id="id_banner2">
+                <div class="swiper-slide">Slide 1</div>
+                <div class="swiper-slide">Slide 2</div>
+                <div class="swiper-slide">Slide 3</div>
+            </div>
+            <!-- 如果需要分页器 -->
+            <!-- <div class="swiper-pagination"></div> -->
+            <!-- 如果需要滚动条 -->
+            <div class="swiper-scrollbar"></div>
+        </div>
+
+        <div class="aui-form">
+            <div>2. YB语音模块</div>
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="展示读取到的信息" id="id_info" />
+            </div>
+            <div class="aui-btn-row">
+                <p>
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="startOneshot()">
+                    开启唤醒听写监听
+                </div>
+                </p>
+            </div>
+            <div class="aui-btn-row">
+                <p>
+                <div class="aui-btn aui-btn-success aui-btn-block" id="id_voice_operate">
+                    长按开始识别
+                </div>
+                </p>
+            </div>
+            <div>3. 线程守护
+                <p>
+                <div class="aui-btn aui-btn-info" onclick="startAlive()">yb-开启线程常驻</div>
+                </p>
+                <p>
+                <div class="aui-btn aui-btn-info" onclick="stopAlive()">停止-未成功</div>
+                </p>
+            </div>
+            <div>4. PDF
+                <p>
+                <div class="aui-btn aui-btn-info" onclick="openPdf()">yb-测试PDF模块</div>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="listen_gif_div">
+        <img src="../image/listen.gif" id="listen_gif" style='display:none' width="200px" hight="200px">
+    </div>
+    <!-- 早期img方式，下改为background方式 -->
+    <!--<div class="aui-btn" id="voice_btn_div">
+        <img src="../image/mic_black.png" id="id_voice_btn" style='display:block' width="50px" hight="50px"/>
+    </div> -->
+    <div class="voice_btn_div" style="background:url(../image/mic_black.png) no-repeat center; background-size:cover;"
+        id="voice_btn_div" onclick="operateVoice();">
+        .
+    </div>
+
+</body>
+<script type="text/javascript" src="../script/api.js"></script>
+<script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
+<script type="text/javascript" src="../script/doT.min.js"></script>
+<script type="text/javascript" src="../script/public.js"></script>
+<script type="text/javascript" src="../script/aui-slide.js"></script>
+<script type="text/javascript" src="../script/swiper.min.js"></script>
+<script type="text/javascript" src="../script/yb-utils.js"></script>
+<script type="text/javascript">
+    var moduleIflyVoice = null;
+    var moduleProcessAlive = null;
+    var pdfReader = null;
+    var $slide; // 轮播组件
+    var voiceFlag = false; // 切换是否识别状态的标识
+    apiready = function () {
+        moduleIflyVoice = api.require("moduleIflyVoice");
+        moduleProcessAlive = api.require('moduleProcessAlive');
+        pdfReader = api.require('pdfReader');
+
+        /*// 开个定时任务
+        var i = 0;
+        setInterval(function(){
+            console.log("--HelloApp--定时任务running..." + i);
+
+            api.toast({
+                msg:"--HelloApp--定时任务running..." + i
+            });
+            i++;
+        }, 2000);*/
+
+        obtainBannerData(); // 获取banner数据
+
+        api.addEventListener({
+            name: 'longpress'
+        }, function (ret, err) {
+            // alert('长按了页面');
+        });
+
+        // 为语音按钮增加按住和释放的事件监听
+        addListenner();
+
+    }
+
+    // 开启语音唤醒识别
+    function startOneshot() {
+        var params = {
+        };
+        moduleIflyVoice.startOneshot(params, function (ret, err) {
+            console.log("-------here 2:" + JSON.stringify(ret));
+            if (ret) {
+                console.log("-------here 3:" + JSON.stringify(ret));
+                var data = ret.data;
+                $("#id_info").val(JSON.stringify(data));
+                alert(JSON.stringify(ret));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+     // 开启线程常驻
+    function startAlive() {
+        var params = {
+        };
+        moduleProcessAlive.startAlive(params, function (ret, err) {
+            if (ret) {
+                var data = ret.data;
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+    // 停止线程常驻-未成功
+    function stopAlive() {
+        var params = {
+        };
+        moduleProcessAlive.stopAlive(params, function (ret, err) {
+            if (ret) {
+                var data = ret.data;
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+    /*var slide = new auiSlide({
+        container:document.getElementById("aui-slide"), //容器
+        // "width":300, //宽度
+        "height":130, //高度
+        "speed":500, //速度
+        "autoPlay": 3000, //自动播放
+        "loop":true,//是否循环
+        "pageShow":true,//是否显示分页器
+        "pageStyle":'dot', //分页器样式，分dot,line
+        'dotPosition':'center' //当分页器样式为dot时控制分页器位置，left,center,right
+    })*/
+
+    // 获取远端banner数据
+    function obtainBannerData() {
+        // 方式一：web服务文件
+        // let host = "http://192.168.43.6:14010";
+        // let url = host + '/yb_files/bannerImages.json';
+        let url = "http://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/file/public/develop_resources/YB/HellloApp/yb_files/bannerImages.json";
+        api.ajax({
+            url: url,
+            method: 'get',
+            dataType: 'json'
+        }, function (ret, err) {
+            if (ret) {
+                showBannerImages(ret);
+            }
+        });
+
+        // 方式二：oss对象存储文件，用fetch。两种方式都ok
+        /* let url = "http://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/file/public/develop_resources/YB/HellloApp/yb_files/bannerImages.json";
+        let params = {
+            headers: {
+                'Cache-Control': 'no-cache' // 不缓存
+            }
+        };
+        fetch(url, params)
+            .then((res) => res.text())
+            .then((data) => {
+                data = eval('(' + data + ')');
+                showBannerImages(data);
+            })
+            .catch((err) => console.log(err)); */
+    }
+
+    // 根据获取到的数据渲染到页面上
+    function showBannerImages(ret) {
+        console.log("------bannerData:" + JSON.stringify(ret));
+        var objs = $api.byId('id_banner');
+
+        // 轮播方式1：aui-slide轮播
+        var str = '';
+        for (var i = 0; i < ret.length; i++) {
+            var data = ret[i];
+            str += '<div class="aui-slide-node bg-dark" tapmode="tap-active"><img src="' + data.imgUrl + '" title="' + data.name + '"/></div>';
+        };
+        $api.html(objs, str);
+        var $slide = new auiSlide({
+            container: document.getElementById("id_aui_slide"),
+            "height": 150, //高度
+            "speed": 500, //速度
+            "autoPlay": 5000, //自动播放
+            "loop": true, //是否循环
+            "pageShow": true, //是否显示分页器
+            "pageStyle":'dot', //分页器样式，分dot,line
+            'dotPosition':'center' //当分页器样式为dot时控制分页器位置，left,center,right
+        });
+
+        // 添加接触停止轮播松手继续的事件监听，未实现
+        // $slide.touchStart(mouseDown);
+        // $slide.touchEnd(mouseUp);
+
+        // 轮播方式2：swiper-slide轮播
+        var objs2 = $api.byId('id_banner2');
+        var str2 = '';
+        for (var i = 0; i < ret.length; i++) {
+            var data = ret[i];
+            str2 += '<div class="swiper-slide"><img width="100%" height="100%" src="' + data.imgUrl + '" title="' + data.name + '"/></div>';
+        };
+        $api.html(objs2, str2);
+        // swiper轮播
+        var swiper = new Swiper('.swiper-container', {
+            autoplay: {
+                delay: 3000, // 停留多长时间切换
+                disableOnInteraction: false, // 手动操作后是否停止自动滚动
+            },
+            loop: false, // 循环模式选项，循环时导致滚动条不准确、小圆点颜色、自动轮播停止
+            effect: 'cube',
+            // 如果需要分页器
+            // pagination: {
+            //     el: '.swiper-pagination',
+            // },
+            // 如果需要滚动条
+            scrollbar: {
+                el: '.swiper-scrollbar',
+                hide: false,
+                draggable: true,
+            },
+            observer: true,//修改swiper自己或子元素时，自动初始化swiper
+        });
+    }
+
+    // 点击停止滚动
+    function mouseDown() {
+        console.log("------mouseDown");
+        $slide.autoPlay();
+    }
+
+    // 点击停止滚动
+    function mouseUp() {
+        console.log("------mouseUp");
+        $slide.autoPlay();
+    }
+
+
+    function addListenner() {
+        document.getElementById("id_voice_operate").addEventListener('touchstart', function (event) {
+            console.log('语音按钮_touchstart');
+            document.getElementById('listen_gif').style.display = 'block';
+            startRecognize()
+        });
+        document.getElementById("id_voice_operate").addEventListener('touchend', function (event) {
+            console.log('语音按钮_touchend');
+            document.getElementById('listen_gif').style.display = 'none';
+            stopRecognize();
+        });
+
+        // 尝试图标的长按和松手-成功，获取不到touchend
+        document.getElementById("voice_btn_div").addEventListener('touchstart', function (event) {
+            console.log('语音按钮_touchstart');
+            startRecognize()
+        });
+        document.getElementById("voice_btn_div").addEventListener('touchend', function (event) {
+            console.log('语音按钮_touchend');
+            stopRecognize();
+        });
+    }
+
+    // 手动触发语音开关
+    function operateVoice() {
+        if (voiceFlag) {
+            voiceFlag = false;
+            stopRecognize();
+        } else {
+            voiceFlag = true;
+            startRecognize();
+        }
+    }
+    function startRecognize() {
+        console.log("-------------:开始识别");
+        var params = {
+        };
+        $("#id_voice_operate").text("松手停止识别");
+        // document.getElementById('id_voice_btn').src='../image/mic_red.png'; // 早期img方式
+        $("#voice_btn_div").attr("style", "background:url(../image/mic_red.png) no-repeat center; background-size:cover;");
+        document.getElementById('listen_gif').style.display = 'block';
+        moduleIflyVoice.startRecognize(params, function (ret, err) {
+            if (ret) {
+                var data = ret.data;
+                $("#id_info").val(JSON.stringify(data));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+    function stopRecognize() {
+        console.log("-------------:停止识别");
+        var params = {
+        };
+        $("#id_voice_operate").text("长按开始识别");
+        // document.getElementById('id_voice_btn').src='../image/mic_black.png'; // 早期img方式
+        $("#voice_btn_div").attr("style", "background:url(../image/mic_black.png) no-repeat center; background-size:cover;");
+        document.getElementById('listen_gif').style.display = 'none';
+        moduleIflyVoice.stopRecognize(params, function (ret, err) {
+            if (ret) {
+                var data = ret.data;
+                $("#id_info").val(JSON.stringify(data));
+            } else {
+                alert(JSON.stringify(err));
+            }
+        });
+    }
+
+    // 使用官方提供的PDF模块查看PDF
+    function openPdf() {
+        pdfReader.open({
+            path: 'widget://res/test.pdf',
+            hidden: {
+                print: true,
+                export: true,
+                bookmark: true,
+                email: true
+            }
+        });
+    }
+
+</script>
+
+</html>

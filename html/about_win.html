@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport"
+		content="maximum-scale=1.0,minimum-scale=1.0,user-scalable=0,width=device-width,initial-scale=1.0" />
+	<meta name="format-detection" content="telephone=no,email=no,date=no,address=no">
+	<title>作页面顶部和底部边框，传参衔接</title>
+	<link rel="stylesheet" type="text/css" href="../css/aui.css" />
+	<script src="../script/api.js"></script>
+	<style>
+
+	</style>
+</head>
+
+<body>
+	<header id='header' class="aui-bar aui-bar-nav" style="background-color: #03a9f4">
+		<a class="aui-pull-left aui-btn" tapmode onclick="closeWin()">
+			<span class="aui-iconfont aui-icon-left"></span>
+		</a>
+		<div class="aui-title" id="middle">
+			<!--<img src='../image/logo-smaller.png'/>-->
+		</div>
+	</header>
+</body>
+<script>
+	apiready = function () {
+
+		api.addEventListener({
+			name: 'keyback'
+		}, function (ret, err) {
+			if (ret) {
+				//点击返回，执行主页查询消息方法
+				closeWin();
+			} else {
+				console.log(JSON.stringify(err));
+			}
+		});
+
+		var header = $api.byId('header');
+		// 修复开启沉浸式效果带来的顶部Header与手机状态栏重合的问题，最新api.js方法已支持适配iPhoneX；
+        var headerH = $api.fixStatusBar(header);
+
+		var pageUrl = api.pageParam.url;
+		var title = api.pageParam.title;
+		var div = document.getElementById('middle');
+		div.innerHTML = "<strong id='title'>" + title + "</strong>";
+		api.openFrame({
+			name: 'about-con',
+			url: pageUrl,
+			rect: {
+				marginTop: headerH, // 页面距离win顶部的高度
+				x: 0,
+				y: 0,
+				w: 'auto',
+			},
+			pageParam: {
+				extra: api.pageParam.extra,
+			},
+			bgColor: '#FFFFFF',
+			showProgress: true,
+			bounces: false
+		});
+
+	}
+
+	function closeWin() {
+		api.closeWin();
+		// api.execScript({
+		// 	name:'main_win',
+		// 	frameName: 'main',
+		//     script: 'getMsg();'
+		// });
+	}
+
+</script>
+
+</html>
