@@ -22,7 +22,9 @@
             <div class="aui-input-row ">
                 <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
                 <input type="text" class="aui-input" placeholder="屏蔽键盘输入框" id="text" onfocus="stopKeyborad($(this))" onclick="stopKeyborad($(this))"/>
-                <input type="text" class="aui-input" placeholder="普通输入框" id="text2" />
+                <input type="text" class="aui-input" placeholder="普通输入框" id="text2"/>
+                <input type="text" class="aui-input" placeholder="输入框-readonly" id="text3" readonly/>
+                <input type="text" class="aui-input" placeholder="输入框-disabled" id="text4" disabled/>
             </div>
             <div class="aui-btn-row">
                 <div class="aui-btn aui-btn-success aui-btn-block" onclick="testSetVal()">
@@ -54,6 +56,7 @@
     {
         let text = "自动给你一段文本";
         $("#text").val(text);
+        $("#text3").val(text);
     }
 
 </script>
