@@ -1,0 +1,61 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="maximum-scale=1.0, minimum-scale=1.0, user-scalable=0, initial-scale=1.0, width=device-width" />
+    <meta name="format-detection" content="telephone=no, email=no, date=no, address=no">
+    <title>TEST离线语音播报</title>
+    <link rel="stylesheet" type="text/css" href="../css/api.css" />
+    <link rel="stylesheet" type="text/css" href="../css/aui.css" />
+    <style>
+        p {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div>1、测试屏蔽键盘</div>
+    <div class="aui-content-padded" >
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="屏蔽键盘输入框" id="text" onfocus="stopKeyborad($(this))" onclick="stopKeyborad($(this))"/>
+                <input type="text" class="aui-input" placeholder="普通输入框" id="text2" />
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testSetVal()">
+                    直接赋值
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+<script type="text/javascript" src="../script/api.js"></script>
+<script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
+<script type="text/javascript" src="../script/public.js"></script>
+<script type="text/javascript">
+
+    apiready = function(){
+    }
+
+    function stopKeyborad(obj)
+    {
+        console.log("------focus");
+        obj.attr('readonly', 'readonly');
+        setTimeout(function() {
+            obj.removeAttr('readonly');
+        }, 200);
+    }
+
+    function testSetVal()
+    {
+        let text = "自动给你一段文本";
+        $("#text").val(text);
+    }
+
+</script>
+
+</html>
