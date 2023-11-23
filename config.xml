@@ -35,4 +35,9 @@
     <meta-data name="OFFLINE_APP_KEY" value="ynznjbcb2qzfcxabyrs7w5hj3cpmy5owxyuxb5aw"/>
     <meta-data name="OFFLINE_APP_SECRET" value="3cab1b99c13f84a692f63c50d16197e8"/>
 
+	<feature name="IFlyVoice">
+		<!-- <param name="appId_iOS" value="5bff50df"/> -->
+		 <param name="appId_Android" value="5b1236fa" /> <!--5d11f8d5 -->
+	</feature>
+
 </widget>

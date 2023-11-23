@@ -16,7 +16,7 @@
 </head>
 
 <body>
-    <div>1、测试语音播报</div>
+    <h3>1、测试语音播报</h3>
     <div class="aui-content-padded" >
         <div class="aui-form">
             <div class="aui-btn-row">
@@ -38,6 +38,33 @@
         </div>
     </div>
 
+    <h3>2、测试新款离线语音播报-讯飞IFlyVoice</h3>
+    <div class="aui-content-padded" >
+        <div class="aui-form">
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testVoiceSpeakIFly('测试语音播报-讯飞')">
+                    直接播报
+                </div>
+            </div>
+        </div>
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon  aui-iconfont aui-icon-people"></i>
+                <input type="text" class="aui-input" placeholder="要播报的内容" id="voice_text_ifly"/>
+            </div>
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testVoiceSpeakDIYIFly()">
+                    播报上面的内容
+                </div>
+
+                <button onclick="fnstartSynthetic()">startSynthetic</button>
+                <button onclick="fnpauseSpeaking()">pauseSpeaking</button>
+                <button onclick="fnresumeSpeaking()">resumeSpeaking</button>
+                <button onclick="fnstopSpeaking()">stopSpeaking</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 <script type="text/javascript" src="../script/api.js"></script>
 <script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
@@ -45,9 +72,19 @@
 <script type="text/javascript">
 
     var audioModule = null;
+    var IFlyVoice = null;
     apiready = function(){
         audioModule = api.require("OtherOffLineSpeakModule");
         checkPhonePermission();
+
+        // 20230904 讯飞-离线语音合成（高品质版）
+        IFlyVoice = api.require('IFlyVoice');
+        IFlyVoice.initSpeechSynthesizer(function(ret){
+            console.log(JSON.stringify(ret));
+        });
+        IFlyVoice.addSyntheticListener(function(ret) {
+            console.log(JSON.stringify(ret));
+        });
     }
 
     function testVoiceSpeakDIY(){
@@ -106,6 +143,36 @@
         }
     }
 
+
+    // 讯飞语音-离线语音合成
+    function testVoiceSpeakIFly(value){
+        console.log("-------here 1");
+        console.log("-------value:" + value);
+
+        IFlyVoice.startSynthetic({
+            text: value,
+            commonPath_Android: 'widget://res/tts/common.jet',
+            pronouncePath_Android: 'widget://res/tts/xiaoyan.jet',
+            pronounceName: 'xiaoyan'
+        }, function(ret, err) {
+            console.log(JSON.stringify(ret));
+            console.log(JSON.stringify(err));
+            alert(JSON.stringify(ret));
+        });
+        console.log("-------here 3");
+    }
+
+    function fnpauseSpeaking() {
+        IFlyVoice.pauseSpeaking();
+    }
+
+    function fnresumeSpeaking() {
+        IFlyVoice.resumeSpeaking();
+    }
+
+    function fnstopSpeaking() {
+        IFlyVoice.stopSpeaking();
+    }
 </script>
 
 </html>
