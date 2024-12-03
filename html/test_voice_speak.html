@@ -65,6 +65,39 @@
         </div>
     </div>
 
+    <h3>3、测试录音和播放</h3>
+    <div class="aui-content-padded" >
+        <div class="aui-form">
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testAudioRecordStart()">
+                    录音到本地-start
+                </div>
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testAudioRecordStop()">
+                    录音到本地-stop
+                </div>
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testAudioPlay()">
+                    播放刚才的本地录音
+                </div>
+                <div class="aui-btn aui-btn-danger aui-btn-block" onclick="testAudioPlayStop()">
+                    停止播放
+                </div>
+            </div>
+        </div>
+        <div class="aui-form">
+            <div class="aui-btn-row">
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testAudioRecordStart()">
+                    录音上传-start
+                </div>
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testAudioRecordStopUpload()">
+                    录音上传-stop
+                </div>
+                <div class="aui-btn aui-btn-success aui-btn-block" onclick="testAudioPlayDownload()">
+                    播放刚才上传的录音-下载和播放
+                </div>
+            </div>
+        </div>
+    </div>
+
 </body>
 <script type="text/javascript" src="../script/api.js"></script>
 <script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
@@ -73,18 +106,21 @@
 
     var audioModule = null;
     var IFlyVoice = null;
+    var audioPath = null; // 录音文件的路径
+    var serverUrl = "http://10.1.8.246/prj-v5-web/"; // 测试音频文件上传下载的服务地址
+    var fileGid = null; // 下载的文件对象GID
     apiready = function(){
         audioModule = api.require("OtherOffLineSpeakModule");
         checkPhonePermission();
 
-        // 20230904 讯飞-离线语音合成（高品质版）
-        IFlyVoice = api.require('IFlyVoice');
-        IFlyVoice.initSpeechSynthesizer(function(ret){
-            console.log(JSON.stringify(ret));
-        });
-        IFlyVoice.addSyntheticListener(function(ret) {
-            console.log(JSON.stringify(ret));
-        });
+        // 20230904 讯飞-离线语音合成（高品质版） - 与自己开发的自定义模块（讯飞语言唤醒识别）冲突，不可同时启用，遂停用
+        // IFlyVoice = api.require('IFlyVoice');
+        // IFlyVoice.initSpeechSynthesizer(function(ret){
+        //     console.log(JSON.stringify(ret));
+        // });
+        // IFlyVoice.addSyntheticListener(function(ret) {
+        //     console.log(JSON.stringify(ret));
+        // });
     }
 
     function testVoiceSpeakDIY(){
@@ -172,6 +208,176 @@
 
     function fnstopSpeaking() {
         IFlyVoice.stopSpeaking();
+    }
+
+    // 录音开始
+    function testAudioRecordStart() {
+        let fileName = this.generateUniqueFileName('AUDIO');
+        let param = {
+            type: 'wav',
+            path: 'fs://' + fileName + '.wav',
+        }
+        api.startRecord(param);
+        api.toast({
+            msg: '录音开始...',
+            duration: 3000,
+            location: 'top'
+        });
+    }
+
+    // 录音结束-本地
+    function testAudioRecordStop() {
+        api.stopRecord(function(ret, err) {
+            if (ret) {
+                var path = ret.path; // 音频文件的路径
+                var duration = ret.duration; // 音频文件的时长
+                console.log('audio 路径：' + path);
+                console.log('audio 时长：' + duration);
+                audioPath = path;
+            }
+            api.toast({
+                msg: '录音结束，路径：' + ret.path + "，时长：" + ret.duration,
+                duration: 3000,
+                location: 'top'
+            });
+        });
+    }
+    // 录音播放-本地
+    function testAudioPlay() {
+        startPlay(audioPath);
+    }
+    // 解析路径播放录音文件
+    function startPlay(audioPath) {
+        // 判断录音文件路径是否为空
+        if (!audioPath) {
+            alert("录音文件路径为空，请先完成录制。");
+            return;
+        }
+        
+        // 截取出文件名
+        console.log("文件路径：" + audioPath);
+        let fileName = getFileNameFromPath(audioPath);
+        console.log("文件名称：" + fileName);
+
+        api.startPlay({
+            path: 'fs://' + fileName,
+        }, function(ret, err) {
+            if (ret) {
+                api.toast({
+                    msg: '播放完成！',
+                    duration: 3000,
+                    location: 'top'
+                });
+            } else {
+                api.alert({
+                    msg:JSON.stringify(err)
+                });
+            }
+        });
+    }
+    // 停止播放
+    function testAudioPlayStop()
+    {
+        api.stopPlay()
+    }
+    // 从文件路径中截取出文件名
+    function getFileNameFromPath(path) {
+        // 使用 '/' 作为分隔符将路径分割成数组
+        var parts = path.split('/');
+        // 数组的最后一项即为文件名
+        return parts[parts.length - 1];
+    }
+    // 生成唯一文件名：基础名_时间戳_随机数
+    function generateUniqueFileName(baseName) {
+        // 获取当前时间戳（毫秒级别）
+        const timestamp = new Date().getTime();
+        
+        // 生成一个4位随机数
+        const randomPart = Math.floor(1000 + Math.random() * 9000);
+        
+        // 拼接成最终文件名
+        return `${baseName}_${timestamp}_${randomPart}`;
+    }
+    // 录音结束-上传到服务器
+    function testAudioRecordStopUpload()
+    {
+        api.stopRecord(function(ret, err) {
+            if (ret) {
+                var path = ret.path; // 音频文件的路径
+                var duration = ret.duration; // 音频文件的时长
+                console.log('audio 路径：' + path);
+                console.log('audio 时长：' + duration);
+                audioPath = path;
+
+                // 截取出文件名
+                console.log("文件路径：" + audioPath);
+                let fileName = getFileNameFromPath(audioPath);
+                console.log("文件名称：" + fileName);
+
+                let url = serverUrl + "ybTestController!uploadAudio.m";
+                api.ajax({
+                    url: url,
+                    method: 'post',
+                    data: {
+                        files: {
+                            file: 'fs://' + fileName,
+                        }
+                    }
+                }, function (res, err) {
+                    console.log( JSON.stringify( res ) );
+                    if (res && res.type) {
+                        api.toast({
+                            msg: '录音结束，并上传文件成功，objId：' + res.data,
+                            duration: 3000,
+                            location: 'top'
+                        });
+                        // 赋值文件对象GID
+                        fileGid = res.data; 
+                    } else {
+                        alert( JSON.stringify( err ) );
+                    }
+                });
+            }
+        });
+    }
+    // 录音播放-从服务器上下载后播放
+    function testAudioPlayDownload() {
+        // 判断录音文件路径是否为空
+        if (!fileGid) {
+            alert("录音文件对象为空，请先完成录制上传。");
+            return;
+        }
+
+        let url = serverUrl + "ybTestController!downloadAudio.m?id=" + fileGid;
+        let fileName = new Date().getTime() + '.wav'; // 用时间戳作名称，下载不用加随机数
+        api.download({
+            url: url,
+            report: true,
+            savePath: 'fs://' + fileName,
+        }, function(ret, err){
+            /* 下载进行中时 */
+            if(ret && 0 == ret.state){
+                api.toast({
+                    msg: "正在下载音频" + ret.percent + "%",
+                    duration: 2000
+                });
+            }
+
+            /* 下载完成，之后进行播报 */
+            if (ret && 1 == ret.state) {
+                var savePath = ret.savePath;
+                console.log('savePath :' + savePath);
+                startPlay(savePath);
+            }
+
+            /* 下载失败 */
+            if(ret && 2 == ret.state){
+                api.toast({
+                    msg: "下载失败",
+                    duration: 5000
+                });
+            }
+        });
     }
 </script>
 
