@@ -40,4 +40,9 @@
 		 <param name="appId_Android" value="5b1236fa" /> <!--5d11f8d5 -->
 	</feature>
 
+	<!-- 短信监听模块配置 -->
+	<feature name="smsListener"/>
+	<permission name="readSMS" />
+	<preference name="backgroundMode" value="audio"/>
+
 </widget>

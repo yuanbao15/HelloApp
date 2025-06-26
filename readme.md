@@ -4,7 +4,28 @@
 
 基于apicloud平台，使用了aui/swipper等第三方组件来完善样式。
 
-主要是用于测试自己开发的一些自定义模块。
+主要是用于测试自己开发的一些自定义模块及某些官方模块。
+
+
+
+##### 需添加自定义模块：
+
+- moduleIflyVoice
+- moduleProcessAlive
+- pdfReader
+- moduleUHF
+- moduleNFC
+- OtherOffLineSpeakModule
+- moduleUHF_I6310
+- moduleNFC_2023
+- moduleNFC_ZBL
+
+##### 需添加官方模块：
+
+- iflyRecognition
+- IFlyVoice   (废弃)
+- smsListener
+- acc5Util
 
 
 
@@ -35,4 +56,14 @@
 ### 6 权限管理测试页
 
 <img src="https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/img/public_imgs/PicGo/202210091533598.png" alt="image-20221009153346330" style="zoom:50%;" />
+
+
+
+
+## 7 测试模块-短信监听
+
+<img src="https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/img/public_imgs/PicGo/202506261615081.png" alt="image-20250626161512595" style="zoom: 50%;" />
+
+
+
 

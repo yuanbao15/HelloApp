@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
+    <title>交警短信提醒</title>
+    <link rel="stylesheet" href="../css/api.css">
+    <style>
+        .container {padding: 15px;}
+        .switch-box {display: flex; justify-content: space-between; align-items: center; margin: 20px 0;}
+        .status {color: #666; font-size: 14px;}
+        .error {color: #ff4444; font-size: 12px; margin-top: 10px;}
+        .success {color: #44aa44; font-size: 12px; margin-top: 10px;}
+        .log-item {margin: 5px 0; padding: 5px; background: #f5f5f5; border-radius: 3px;}
+        .log-time {color: #999; font-size: 10px;}
+        .log-content {color: #333; font-size: 12px;}
+        .btn {padding: 10px 20px; margin: 5px; background: #007aff; color: white; border: none; border-radius: 5px; cursor: pointer;}
+        .btn:disabled {background: #ccc; cursor: not-allowed; opacity: 0.6;}
+        .btn:enabled:hover {background: #0056cc;}
+        .btn-small {padding: 5px 10px; font-size: 12px;}
+        .btn-danger {background: #ff4444;}
+        .btn-danger:hover {background: #cc0000;}
+        .settings {background: #f8f8f8; padding: 10px; border-radius: 5px; margin: 0px 0;}
+        .warning {background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin: 10px 0; color: #856404;}
+        .button-group {display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0;}
+        .button-group .btn {flex: 1; min-width: 120px;}
+        .keyword-item {display: flex; align-items: center; margin: 5px 0; gap: 10px;}
+        .keyword-input {flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 3px;}
+        .logic-selector {margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;}
+        .logic-selector label {margin-right: 15px; font-weight: bold;}
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>交警短信提醒</h1>
+    
+    <div class="warning">
+        <strong>注意：</strong>需要给此应用开启最高权限，如读取短信、关闭电源优化策略等<br>
+    </div>
+    
+    <div class="settings">
+        <div class="switch-box">
+            <span>短信监听开关</span>
+            <input type="checkbox" id="smsSwitch" class="switch">
+        </div>
+        
+        <div class="switch-box">
+            <span>目标号码</span>
+            <input type="text" id="targetNumber" placeholder="例如: 12123" value="12123">
+        </div>
+
+        
+        <div>
+            <span>短信内容关键词：</span>
+            <div id="keywordList">
+                <div class="keyword-item">
+                    <input type="text" class="keyword-input" value="湖北交警" placeholder="输入关键词">
+                    <button class="btn btn-small btn-danger" onclick="removeKeyword(this)">删除</button>
+                </div>
+                <div class="keyword-item">
+                    <input type="text" class="keyword-input" value="鄂AY366Q" placeholder="输入关键词">
+                    <button class="btn btn-small btn-danger" onclick="removeKeyword(this)">删除</button>
+                </div>
+            </div>
+            <button class="btn btn-small" onclick="addKeyword()" style="margin-top: 10px;">添加关键词</button>
+        </div>
+                
+        <div class="logic-selector">
+            <label>关键词匹配逻辑：</label>
+            <br>
+            <input type="radio" id="logicOr" name="logic" value="or" checked>
+            <label for="logicOr">逻辑或</label>
+            <input type="radio" id="logicAnd" name="logic" value="and">
+            <label for="logicAnd">逻辑与</label>
+        </div>
+    </div>
+    
+    <div class="status" id="statusText">当前状态: 未监听</div>
+    <div id="errorText" class="error" style="display: none;"></div>
+    
+    <div class="button-group">
+        <button class="btn" onclick="checkSMSPermission()">检查权限</button>
+        <button class="btn" onclick="clearLogs()">清空日志</button>
+        <button class="btn" onclick="manualTestAlert()">手动测试警报</button>
+        <button class="btn" onclick="stopAlert()">停止警报铃声</button>
+    </div>
+    
+    <div id="logArea" style="margin-top: 20px; max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa;"></div>
+</div>
+
+<script src="../script/api.js"></script>
+<script>
+    var smsListenerModule = null; // 短信监听模块
+    var acc5Util = null; // 引入acc5Util模块-控制音量
+    var isListening = false; // 是否开启监听
+    var targetNumber = '12123'; // 监听短信的目标号码
+    var keywords = ['湖北交警', '鄂AY366Q']; // 关键词
+    var matchLogic = 'or'; // 逻辑：'or' 或 'and'
+    var isPlaying = false; // 是否正在播放警报铃声
+
+    apiready = function() {
+        // 初始化UI
+        initUI();
+        
+        // 检查权限
+        checkSMSPermission();
+        
+        // 尝试初始化短信监听模块
+        initSMSListenerModule();
+
+        // 初始化acc5Util模块
+        initAcc5Util();
+        
+        // 页面卸载时确保停止播放
+        api.addEventListener({
+            name: 'pause'
+        }, function(ret, err) {
+            if (isPlaying) {
+                api.stopPlay();
+                isPlaying = false;
+                updateStatusDisplay();
+                addLog('页面暂停，停止警报铃声', 'warning');
+            }
+        });
+    };
+
+    // 初始化UI
+    function initUI() {
+        // 获取开关元素
+        var smsSwitch = document.getElementById('smsSwitch');
+        var statusText = document.getElementById('statusText');
+        
+        // 从本地存储加载设置
+        var savedListening = api.getPrefs({sync: true, key: 'isListening'});
+        if(savedListening === 'true') {
+            smsSwitch.checked = true;
+            statusText.textContent = '当前状态: 监听中';
+            isListening = true;
+            // 延迟启动监听，确保模块已初始化
+            setTimeout(function() {
+                startSMSListener();
+            }, 1000);
+        }
+        
+        // 监听开关变化
+        smsSwitch.addEventListener('change', function(e) {
+            if(e.target.checked) {
+                statusText.textContent = '当前状态: 正在启动监听...';
+                startSMSListener();
+            } else {
+                statusText.textContent = '当前状态: 已停止监听';
+                stopSMSListener();
+            }
+            // 保存设置
+            api.setPrefs({
+                key: 'isListening',
+                value: e.target.checked.toString()
+            });
+        });
+        
+        // 加载目标号码
+        var savedTargetNumber = api.getPrefs({sync: true, key: 'targetNumber'});
+        if(savedTargetNumber) {
+            document.getElementById('targetNumber').value = savedTargetNumber;
+            targetNumber = savedTargetNumber;
+        }
+        
+        // 监听号码输入变化
+        document.getElementById('targetNumber').addEventListener('input', function(e) {
+            targetNumber = e.target.value;
+            api.setPrefs({
+                key: 'targetNumber',
+                value: targetNumber
+            });
+        });
+        
+        // 加载关键词
+        var savedKeywords = api.getPrefs({sync: true, key: 'keywords'});
+        if(savedKeywords) {
+            keywords = JSON.parse(savedKeywords);
+            updateKeywordUI();
+        }
+        
+        // 加载匹配逻辑
+        var savedLogic = api.getPrefs({sync: true, key: 'matchLogic'});
+        if(savedLogic) {
+            matchLogic = savedLogic;
+            document.getElementById('logic' + matchLogic.charAt(0).toUpperCase() + matchLogic.slice(1)).checked = true;
+        }
+        
+        // 监听逻辑选择变化
+        document.querySelectorAll('input[name="logic"]').forEach(function(radio) {
+            radio.addEventListener('change', function(e) {
+                matchLogic = e.target.value;
+                api.setPrefs({
+                    key: 'matchLogic',
+                    value: matchLogic
+                });
+                addLog('匹配逻辑已更改为: ' + (matchLogic === 'or' ? '逻辑或' : '逻辑与'), 'success');
+            });
+        });
+    }
+
+    // 更新关键词UI
+    function updateKeywordUI() {
+        var keywordList = document.getElementById('keywordList');
+        keywordList.innerHTML = '';
+        
+        keywords.forEach(function(keyword, index) {
+            var item = document.createElement('div');
+            item.className = 'keyword-item';
+            item.innerHTML = `
+                <input type="text" class="keyword-input" value="${keyword}" placeholder="输入关键词" onchange="updateKeyword(${index}, this.value)">
+                <button class="btn btn-small btn-danger" onclick="removeKeyword(this, ${index})">删除</button>
+            `;
+            keywordList.appendChild(item);
+        });
+    }
+
+    // 添加关键词的操作
+    function addKeyword() {
+        keywords.push('');
+        updateKeywordUI();
+        saveKeywords();
+        addLog('已添加新关键词', 'success');
+    }
+
+    // 删除关键词的操作
+    function removeKeyword(button, index) {
+        if (keywords.length <= 1) {
+            api.toast({
+                msg: '至少需要保留一个关键词',
+                duration: 3000,
+                location: 'top'
+            });
+            addLog('至少需要保留一个关键词', 'error');
+            return;
+        }
+        keywords.splice(index, 1);
+        updateKeywordUI();
+        saveKeywords();
+        addLog('已删除关键词', 'success');
+    }
+
+    // 更新关键词的操作
+    function updateKeyword(index, value) {
+        keywords[index] = value;
+        saveKeywords();
+        addLog('关键词已更新: ' + value, 'success');
+    }
+
+    function saveKeywords() {
+        api.setPrefs({
+            key: 'keywords',
+            value: JSON.stringify(keywords)
+        });
+    }
+
+    // 初始化短信监听模块
+    function initSMSListenerModule() {
+        try {
+            // 使用正确的smsListener模块，用于监听短信
+            smsListenerModule = api.require('smsListener');
+            addLog('短信监听模块初始化成功', 'success');
+        } catch (e) {
+            addLog('短信监听模块初始化失败: ' + e.message, 'error');
+            showError('短信监听模块不可用，请检查APICloud配置');
+        }
+    }
+
+    // 初始化acc5Util模块
+    function initAcc5Util() {
+        try {
+            // 使用正确的acc5Util模块，用于控制音量
+            acc5Util = api.require('acc5Util');
+            addLog('acc5Util模块初始化成功', 'success');
+        } catch (e) {
+            addLog('acc5Util模块初始化失败: ' + e.message, 'error');
+            showError('acc5Util模块不可用，请检查APICloud配置');
+        }
+    }
+
+    // 检查短信读取权限
+    function checkSMSPermission() {
+        var permissions = ['sms']; // 短信读取权限，查询官网确定
+        
+        try {
+            api.requestPermission({
+                list: permissions,
+                code: 100001
+            }, function(ret, err) {
+                
+                if (err) {
+                    addLog('权限请求出错: ' + JSON.stringify(err), 'error');
+                    showError('权限请求出错: ' + err.msg);
+                    return;
+                }
+                
+                if (ret) {
+                    if (ret.list && ret.list.length > 0) {
+                        var granted = ret.list.filter(function(item) {
+                            return item.granted;
+                        });
+                        
+                        if (granted.length > 0) {
+                            addLog('短信读取权限已授权', 'success');
+                            api.toast({
+                                msg: '权限检查成功！',
+                                duration: 2000,
+                                location: 'top'
+                            });
+                        } else {
+                            addLog('短信读取权限被拒绝', 'error');
+                            showError('需要短信读取权限才能使用此功能');
+                            
+                            // 提示用户手动开启权限
+                            api.confirm({
+                                title: '权限被拒绝',
+                                msg: '短信读取权限被拒绝，请在系统设置中手动开启权限。是否前往设置？',
+                                buttons: ['取消', '去设置']
+                            }, function(ret) {
+                                if (ret.buttonIndex === 2) {
+                                    // 打开应用设置页面
+                                    api.openApp({
+                                        androidPkg: 'com.android.settings',
+                                        mimeType: 'text/html',
+                                        uri: 'package:' + api.appId
+                                    });
+                                }
+                            });
+                        }
+                    } else {
+                        addLog('权限列表为空', 'error');
+                        showError('权限列表为空，请检查权限配置');
+                    }
+                } else {
+                    addLog('权限请求无返回结果', 'error');
+                    showError('权限请求无返回结果');
+                }
+            });
+        } catch (e) {
+            addLog('权限请求异常: ' + e.message, 'error');
+            showError('权限请求异常: ' + e.message);
+        }
+    }
+
+
+    // 启动短信监听功能
+    function startSMSListener() {
+        if (!smsListenerModule) {
+            addLog('短信监听模块未初始化，无法启动监听', 'error');
+            showError('短信监听模块未初始化');
+            return;
+        }
+
+        try {
+            // 使用正确的API注册短信监听
+            smsListenerModule.registerSmsListener(function(ret) {
+                addLog('收到短信: ' + JSON.stringify(ret), 'success');
+                processSMS(ret);
+            });
+            
+            isListening = true;
+            addLog('短信监听已启动', 'success');
+            
+        } catch (e) {
+            addLog('启动短信监听失败: ' + e.message, 'error');
+            showError('启动短信监听失败');
+        }
+    }
+
+    // 停止短信监听功能
+    function stopSMSListener() {
+        try {
+            if (smsListenerModule) {
+                // 使用正确的API注销短信监听
+                smsListenerModule.unRegisterSmsListener();
+            }
+            
+            isListening = false;
+            addLog('短信监听已停止', 'success');
+            
+        } catch (e) {
+            addLog('停止短信监听失败: ' + e.message, 'error');
+        }
+    }
+
+    // 对监听到的短信进行处理，满足条件后触发提醒
+    function processSMS(sms) {
+        if (!sms || !sms.tel) {
+            return;
+        }
+        
+        addLog('收到短信来自: ' + sms.tel + ', 内容: ' + (sms.content ? sms.content.substr(0, 30) + '...' : '无内容'));
+        
+        // 检查是否是目标号码   -测试阶段，先不限制目标号码
+        // if(sms.tel.indexOf(targetNumber) !== -1) {
+        {
+            addLog('检测到目标号码短信', 'success');
+            
+            // 检查短信内容是否匹配关键词
+            if (checkContentMatch(sms.content)) {
+                addLog('短信内容匹配关键词，触发提醒', 'success');
+                playAlert(sms.content);
+            } else {
+                addLog('短信内容不匹配关键词，忽略', 'success');
+            }
+        }
+    }
+    // 判断关键词是否匹配
+    function checkContentMatch(content) {
+        if (!content || keywords.length === 0) {
+            return false;
+        }
+        
+        var matchedKeywords = keywords.filter(function(keyword) {
+            return keyword && content.indexOf(keyword) !== -1;
+        });
+        
+        if (matchLogic === 'or') {
+            // 逻辑或：任一关键词匹配即可
+            return matchedKeywords.length > 0;
+        } else {
+            // 逻辑与：所有关键词都必须匹配
+            return matchedKeywords.length === keywords.filter(function(k) { return k; }).length;
+        }
+    }
+
+    // 音量处理，设置音量
+    function processVolume(volume) {
+
+        // 获取当前音量
+        let currentVolume = 0;
+        acc5Util.getVol({}, function(ret, err){
+            console.log(JSON.stringify(ret));
+            // system：系统音量，music：媒体音量，ring：铃声音量，alarm：闹钟音量，call：通话音量
+            // 数值，0到1之间
+            currentVolume = ret.data.system;
+            addLog('当前音量为：' + (currentVolume*100) + '%', 'success');
+        })
+
+        // 设置音量
+        acc5Util.setVol({value: volume}, function(ret, err){
+            console.log(JSON.stringify(ret));
+            addLog('设置音量为：' + (volume*100) + '%', 'success');
+        });
+        
+    }
+
+    // 播放提醒警报音效
+    function playAlert(smsContent) {
+        try {
+            // 如果正在播放，先停止
+            if (isPlaying) {
+                api.stopPlay();
+                isPlaying = false;
+                addLog('停止之前的警报铃声', 'success');
+            }
+            
+            // 播放提醒音效
+            var audioPath = 'widget://res/policeCar_alert.mp3'; // 需要准备一个提醒音效
+            
+            isPlaying = true;
+            addLog('开始播放警报铃声', 'success');
+            updateStatusDisplay();
+
+            // 设置音量为30%
+            processVolume(0.3);
+            
+            api.startPlay({
+                path: audioPath,
+            }, function(ret, err) {
+                if (ret) {
+                    isPlaying = false;
+                    addLog('警报铃声播放完成', 'success');
+                    updateStatusDisplay();
+                    
+                    api.toast({
+                        msg: '播放完成！',
+                        duration: 3000,
+                        location: 'top'
+                    });
+
+                    // 显示提醒对话框
+                    api.alert({
+                        title: '交警短信提醒',
+                        msg: '您收到了来自交警的短信，请及时处理！\n\n短信内容：' + smsContent,
+                        buttons: ['我知道了']
+                    }, function(ret) {
+                        // 用户点击后确保停止播放
+                        if (isPlaying) {
+                            api.stopPlay();
+                            isPlaying = false;
+                            updateStatusDisplay();
+                        }
+                    });
+                } else {
+                    isPlaying = false;
+                    addLog('警报铃声播放失败: ' + JSON.stringify(err), 'error');
+                    updateStatusDisplay();
+                    api.alert({
+                        msg: JSON.stringify(err)
+                    });
+                }
+            });
+        } catch (e) {
+            isPlaying = false;
+            addLog('警报铃声播放异常: ' + e.message, 'error');
+            updateStatusDisplay();
+            // 如果音频模块不可用，只显示对话框
+            api.alert({
+                title: '交警短信提醒',
+                msg: '您收到了来自交警的短信，请及时处理！',
+                buttons: ['我知道了']
+            });
+        }
+    }
+
+    // 显示错误信息
+    function showError(message) {
+        var errorText = document.getElementById('errorText');
+        errorText.textContent = message;
+        errorText.style.display = 'block';
+        
+        // 3秒后自动隐藏错误信息
+        setTimeout(function() {
+            errorText.style.display = 'none';
+        }, 3000);
+    }
+
+    // 清空日志
+    function clearLogs() {
+        var logArea = document.getElementById('logArea');
+        logArea.innerHTML = '';
+        addLog('日志已清空', 'success');
+    }
+
+    // 添加日志：成功、失败、警告
+    function addLog(text, type) {
+        var logArea = document.getElementById('logArea');
+        var time = new Date().toLocaleTimeString();
+        var logItem = document.createElement('div');
+        logItem.className = 'log-item';
+        
+        var timeSpan = document.createElement('div');
+        timeSpan.className = 'log-time';
+        timeSpan.textContent = time;
+        
+        var contentSpan = document.createElement('div');
+        contentSpan.className = 'log-content';
+        contentSpan.textContent = text;
+        
+        if (type === 'error') {
+            contentSpan.style.color = '#ff4444';
+        } else if (type === 'success') {
+            contentSpan.style.color = '#44aa44';
+        }
+        
+        logItem.appendChild(timeSpan);
+        logItem.appendChild(contentSpan);
+        
+        // 在顶部插入新的日志
+        if (logArea.firstChild) {
+            logArea.insertBefore(logItem, logArea.firstChild);
+        } else {
+            logArea.appendChild(logItem);
+        }
+        
+        // 限制日志数量，最多显示50条
+        while (logArea.children.length > 50) {
+            logArea.removeChild(logArea.lastChild);
+        }
+        
+        console.log(time + ': ' + text);
+    }
+
+    // 手动测试提醒功能-触发短信后续逻辑
+    function manualTestAlert() {
+        addLog('手动测试提醒功能', 'success');
+        
+        // 模拟收到目标号码的短信
+        var mockSMS = {
+            tel: targetNumber,
+            content: '湖北交警提醒：您的车辆鄂AY366Q在XX路段有违章记录，请及时处理。'
+        };
+        
+        addLog('模拟收到短信: ' + JSON.stringify(mockSMS), 'success');
+        processSMS(mockSMS);
+    }
+    // 用于停止警报铃声
+    function stopAlert() {
+        if (isPlaying) {
+            try {
+                api.stopPlay();
+                isPlaying = false;
+                addLog('警报铃声已手动停止', 'success');
+                updateStatusDisplay();
+                api.toast({
+                    msg: '警报铃声已停止',
+                    duration: 2000,
+                    location: 'top'
+                });
+            } catch (e) {
+                addLog('停止警报铃声失败: ' + e.message, 'error');
+                // 即使停止失败，也要重置状态
+                isPlaying = false;
+                updateStatusDisplay();
+            }
+        } else {
+            addLog('没有正在播放的警报铃声', 'warning');
+            api.toast({
+                msg: '当前没有播放中的警报铃声',
+                duration: 2000,
+                location: 'top'
+            });
+        }
+    }
+
+    // 获取播放状态
+    function getPlayingStatus() {
+        return isPlaying;
+    }
+
+    // 更新状态显示
+    function updateStatusDisplay() {
+        var statusText = document.getElementById('statusText');
+        var currentStatus = statusText.textContent;
+        var playingStatus = isPlaying ? ' (警报播放中)' : '';
+        
+        // 如果状态文本不包含播放状态，则添加
+        if (isPlaying && currentStatus.indexOf('警报播放中') === -1) {
+            statusText.textContent = currentStatus + playingStatus;
+        } else if (!isPlaying && currentStatus.indexOf('警报播放中') !== -1) {
+            // 移除播放状态
+            statusText.textContent = currentStatus.replace(' (警报播放中)', '');
+        }
+    }
+</script>
+
+</body>
+</html>
