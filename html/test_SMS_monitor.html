@@ -180,6 +180,9 @@
                 isPlaying = false;
                 updateStatusDisplay();
                 addLog('页面暂停，停止警报铃声', 'warning');
+                
+                // 恢复原始音量
+                restoreOriginalVolume();
             }
             
             // 重置试听状态
@@ -188,6 +191,9 @@
                 isTestPlaying = false;
                 document.getElementById('testSoundBtn').textContent = '试听';
                 addLog('页面暂停，停止音效试听', 'warning');
+                
+                // 恢复原始音量
+                restoreOriginalVolume();
             }
         });
     };
@@ -811,9 +817,11 @@
             return;
         }
         
+        // 先获取当前音量：system：系统音量，music：媒体音量，ring：铃声音量，call：通话音量，alarm：闹钟音量，notice
         acc5Util.getVol({}, function(ret, err) {
             if (ret && ret.data) {
-                var currentVolume = ret.data.system;
+                console.log('----------------当前系统音量：' + JSON.stringify(ret));
+                var currentVolume = ret.data.music;
                 document.getElementById('currentVolume').textContent = (currentVolume * 100).toFixed(0) + '%';
                 addLog('当前系统音量: ' + (currentVolume * 100).toFixed(0) + '%', 'success');
             } else {
@@ -831,19 +839,21 @@
         });
     }
 
-    // 保存当前音量并设置新音量
-    var originalVolume = 0; // 保存原始音量
+    // 记录原始音量
+    var originalVolume = 0; // 值为0到1之间的小数，0为静音，1为最大音量。
     
+    // 保存当前音量并设置新音量
     function saveAndSetVolume(newVolume) {
         if (!acc5Util) {
             addLog('acc5Util模块未初始化，无法控制音量', 'error');
             return false;
         }
         
-        // 先获取当前音量
+        // 先获取当前音量：system：系统音量，music：媒体音量，ring：铃声音量，call：通话音量，alarm：闹钟音量，notice: 通知音量
         acc5Util.getVol({}, function(ret, err) {
             if (ret && ret.data) {
-                originalVolume = ret.data.system;
+                originalVolume = ret.data.music;
+                console.log('----------------当前系统音量2：' + JSON.stringify(ret));
                 addLog('保存原始音量: ' + (originalVolume * 100).toFixed(0) + '%', 'success');
                 
                 // 设置新音量
@@ -871,6 +881,8 @@
         acc5Util.setVol({value: originalVolume}, function(ret, err) {
             if (ret) {
                 addLog('恢复原始音量: ' + (originalVolume * 100).toFixed(0) + '%', 'success');
+                // 恢复原始音量后，更新当前音量显示
+                refreshCurrentVolume();
             } else {
                 addLog('恢复音量失败: ' + JSON.stringify(err), 'error');
             }
@@ -967,8 +979,15 @@
                 isTestPlaying = false;
                 testBtn.textContent = '试听';
                 addLog('音效试听已停止', 'success');
+                
+                // 停止试听时也要恢复原始音量
+                restoreOriginalVolume();
             } catch (e) {
                 addLog('停止试听失败: ' + e.message, 'error');
+                // 即使停止失败，也要重置状态和恢复音量
+                isTestPlaying = false;
+                testBtn.textContent = '试听';
+                restoreOriginalVolume();
             }
             return;
         }
@@ -989,6 +1008,12 @@
             isTestPlaying = true;
             testBtn.textContent = '停止';
             
+            // 获取设置的警报音量
+            var alertVolumePercent = document.getElementById('alertVolume').value;
+            var alertVolume = alertVolumePercent / 100;
+            // 保存当前音量并设置警报音量
+            saveAndSetVolume(alertVolume);
+            
             api.startPlay({
                 path: audioPath,
             }, function(ret, err) {
@@ -1001,11 +1026,17 @@
                 // 试听完成后恢复按钮状态
                 isTestPlaying = false;
                 testBtn.textContent = '试听';
+
+                // 试听完成后恢复原始音量
+                restoreOriginalVolume();
             });
         } catch (e) {
             addLog('音效试听异常: ' + e.message, 'error');
             isTestPlaying = false;
             testBtn.textContent = '试听';
+            
+            // 异常情况下也要恢复原始音量
+            restoreOriginalVolume();
         }
     }
 
