@@ -137,7 +137,7 @@
     var voiceFlag = false; // 切换是否识别状态的标识
     apiready = function () {
         moduleIflyVoice = api.require("moduleIflyVoice");
-        moduleProcessAlive = api.require('moduleProcessAlive');
+        moduleProcessAlive = api.require('moduleProcessAlive_2024');
         pdfReader = api.require('pdfReader');
 
         /*// 开个定时任务
@@ -181,7 +181,7 @@
         });
     }
 
-     // 开启线程常驻
+    // 开启线程常驻
     function startAlive() {
         var params = {
         };

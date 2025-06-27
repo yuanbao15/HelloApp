@@ -28,6 +28,22 @@
         .keyword-input {flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 3px;}
         .logic-selector {margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;}
         .logic-selector label {margin-right: 15px; font-weight: bold;}
+        .volume-control {margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;}
+        .volume-item {margin: 5px 0; display: flex; align-items: center; gap: 10px;}
+        .volume-item span {font-weight: bold; color: #007aff;}
+        
+        /* 删除按钮样式 */
+        .btn-delete {width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #ffffff;}
+        
+        /* 音量控制样式 */
+        .volume-slider {width: 150px; accent-color: #ff0000;}
+        .volume-value {color: #ff0000; font-weight: bold;}
+        .current-volume-display {font-weight: bold; color: #007aff;}
+        
+        /* 其他样式 */
+        .add-keyword-btn {margin-top: 10px;}
+        .log-area {margin-top: 20px; max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa;}
+        .error-hidden {display: none;}
     </style>
 </head>
 <body>
@@ -45,7 +61,7 @@
         </div>
         
         <div class="switch-box">
-            <span>目标号码</span>
+            <span>监听目标号码</span>
             <input type="text" id="targetNumber" placeholder="例如: 12123" value="12123">
         </div>
 
@@ -55,14 +71,14 @@
             <div id="keywordList">
                 <div class="keyword-item">
                     <input type="text" class="keyword-input" value="湖北交警" placeholder="输入关键词">
-                    <button class="btn btn-small btn-danger" onclick="removeKeyword(this)">删除</button>
+                    <button class="btn btn-small btn-danger btn-delete" onclick="removeKeyword(this)">−</button>
                 </div>
                 <div class="keyword-item">
                     <input type="text" class="keyword-input" value="鄂AY366Q" placeholder="输入关键词">
-                    <button class="btn btn-small btn-danger" onclick="removeKeyword(this)">删除</button>
+                    <button class="btn btn-small btn-danger btn-delete" onclick="removeKeyword(this)">−</button>
                 </div>
             </div>
-            <button class="btn btn-small" onclick="addKeyword()" style="margin-top: 10px;">添加关键词</button>
+            <button class="btn btn-small add-keyword-btn" onclick="addKeyword()">添加关键词</button>
         </div>
                 
         <div class="logic-selector">
@@ -73,10 +89,24 @@
             <input type="radio" id="logicAnd" name="logic" value="and">
             <label for="logicAnd">逻辑与</label>
         </div>
+
+        <div class="volume-control">
+            <label>音量控制：</label>
+            <div class="volume-item">
+                <span>当前系统音量：</span>
+                <span id="currentVolume" class="current-volume-display">获取中...</span>
+                <button class="btn btn-small" onclick="refreshCurrentVolume()">刷新</button>
+            </div>
+            <div class="volume-item">
+                <span>设置警报音量：</span>
+                <input type="range" id="alertVolume" class="volume-slider" min="0" max="100" value="30">
+                <span id="alertVolumeValue" class="volume-value">30%</span>
+            </div>
+        </div>
     </div>
     
     <div class="status" id="statusText">当前状态: 未监听</div>
-    <div id="errorText" class="error" style="display: none;"></div>
+    <div id="errorText" class="error error-hidden"></div>
     
     <div class="button-group">
         <button class="btn" onclick="checkSMSPermission()">检查权限</button>
@@ -85,16 +115,17 @@
         <button class="btn" onclick="stopAlert()">停止警报铃声</button>
     </div>
     
-    <div id="logArea" style="margin-top: 20px; max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa;"></div>
+    <div id="logArea" class="log-area"></div>
 </div>
 
 <script src="../script/api.js"></script>
 <script>
     var smsListenerModule = null; // 短信监听模块
     var acc5Util = null; // 引入acc5Util模块-控制音量
+    var moduleProcessAlive = null; // YB-自己的进程守护模块，用于保活
     var isListening = false; // 是否开启监听
     var targetNumber = '12123'; // 监听短信的目标号码
-    var keywords = ['湖北交警', '鄂AY366Q']; // 关键词
+    var keywords = ['湖北交警', '鄂AY366Q']; // 初始化默认关键词
     var matchLogic = 'or'; // 逻辑：'or' 或 'and'
     var isPlaying = false; // 是否正在播放警报铃声
 
@@ -139,7 +170,7 @@
             // 延迟启动监听，确保模块已初始化
             setTimeout(function() {
                 startSMSListener();
-            }, 1000);
+            }, 500);
         }
         
         // 监听开关变化
@@ -199,6 +230,9 @@
                 addLog('匹配逻辑已更改为: ' + (matchLogic === 'or' ? '逻辑或' : '逻辑与'), 'success');
             });
         });
+
+        // 初始化音量控制
+        initVolumeControl();
     }
 
     // 更新关键词UI
@@ -211,7 +245,7 @@
             item.className = 'keyword-item';
             item.innerHTML = `
                 <input type="text" class="keyword-input" value="${keyword}" placeholder="输入关键词" onchange="updateKeyword(${index}, this.value)">
-                <button class="btn btn-small btn-danger" onclick="removeKeyword(this, ${index})">删除</button>
+                <button class="btn btn-small btn-danger btn-delete" onclick="removeKeyword(this, ${index})">−</button>
             `;
             keywordList.appendChild(item);
         });
@@ -261,6 +295,7 @@
         try {
             // 使用正确的smsListener模块，用于监听短信
             smsListenerModule = api.require('smsListener');
+            moduleProcessAlive = api.require('moduleProcessAlive_2024'); // YB-自己的进程守护模块，用于保活
             addLog('短信监听模块初始化成功', 'success');
         } catch (e) {
             addLog('短信监听模块初始化失败: ' + e.message, 'error');
@@ -268,12 +303,18 @@
         }
     }
 
-    // 初始化acc5Util模块
+    // 初始化acc5Util模块-用于控制音量
     function initAcc5Util() {
         try {
             // 使用正确的acc5Util模块，用于控制音量
             acc5Util = api.require('acc5Util');
             addLog('acc5Util模块初始化成功', 'success');
+            
+            // 模块初始化成功后立即获取系统音量
+            setTimeout(function() {
+                refreshCurrentVolume();
+            }, 200); // 延迟200ms确保模块完全初始化
+            
         } catch (e) {
             addLog('acc5Util模块初始化失败: ' + e.message, 'error');
             showError('acc5Util模块不可用，请检查APICloud配置');
@@ -304,11 +345,6 @@
                         
                         if (granted.length > 0) {
                             addLog('短信读取权限已授权', 'success');
-                            api.toast({
-                                msg: '权限检查成功！',
-                                duration: 2000,
-                                location: 'top'
-                            });
                         } else {
                             addLog('短信读取权限被拒绝', 'error');
                             showError('需要短信读取权限才能使用此功能');
@@ -362,7 +398,7 @@
             
             isListening = true;
             addLog('短信监听已启动', 'success');
-            
+            startAlive(); // 同时开启线程常驻
         } catch (e) {
             addLog('启动短信监听失败: ' + e.message, 'error');
             showError('启动短信监听失败');
@@ -426,27 +462,6 @@
         }
     }
 
-    // 音量处理，设置音量
-    function processVolume(volume) {
-
-        // 获取当前音量
-        let currentVolume = 0;
-        acc5Util.getVol({}, function(ret, err){
-            console.log(JSON.stringify(ret));
-            // system：系统音量，music：媒体音量，ring：铃声音量，alarm：闹钟音量，call：通话音量
-            // 数值，0到1之间
-            currentVolume = ret.data.system;
-            addLog('当前音量为：' + (currentVolume*100) + '%', 'success');
-        })
-
-        // 设置音量
-        acc5Util.setVol({value: volume}, function(ret, err){
-            console.log(JSON.stringify(ret));
-            addLog('设置音量为：' + (volume*100) + '%', 'success');
-        });
-        
-    }
-
     // 播放提醒警报音效
     function playAlert(smsContent) {
         try {
@@ -464,8 +479,12 @@
             addLog('开始播放警报铃声', 'success');
             updateStatusDisplay();
 
-            // 设置音量为30%
-            processVolume(0.3);
+            // 获取设置的警报音量
+            var alertVolumePercent = document.getElementById('alertVolume').value;
+            var alertVolume = alertVolumePercent / 100;
+            
+            // 保存当前音量并设置警报音量
+            saveAndSetVolume(alertVolume);
             
             api.startPlay({
                 path: audioPath,
@@ -474,6 +493,9 @@
                     isPlaying = false;
                     addLog('警报铃声播放完成', 'success');
                     updateStatusDisplay();
+                    
+                    // 恢复原始音量
+                    restoreOriginalVolume();
                     
                     api.toast({
                         msg: '播放完成！',
@@ -492,12 +514,16 @@
                             api.stopPlay();
                             isPlaying = false;
                             updateStatusDisplay();
+                            // 确保恢复原始音量
+                            restoreOriginalVolume();
                         }
                     });
                 } else {
                     isPlaying = false;
                     addLog('警报铃声播放失败: ' + JSON.stringify(err), 'error');
                     updateStatusDisplay();
+                    // 播放失败也要恢复原始音量
+                    restoreOriginalVolume();
                     api.alert({
                         msg: JSON.stringify(err)
                     });
@@ -507,6 +533,8 @@
             isPlaying = false;
             addLog('警报铃声播放异常: ' + e.message, 'error');
             updateStatusDisplay();
+            // 异常情况下也要恢复原始音量
+            restoreOriginalVolume();
             // 如果音频模块不可用，只显示对话框
             api.alert({
                 title: '交警短信提醒',
@@ -520,11 +548,11 @@
     function showError(message) {
         var errorText = document.getElementById('errorText');
         errorText.textContent = message;
-        errorText.style.display = 'block';
+        errorText.classList.remove('error-hidden');
         
         // 3秒后自动隐藏错误信息
         setTimeout(function() {
-            errorText.style.display = 'none';
+            errorText.classList.add('error-hidden');
         }, 3000);
     }
 
@@ -581,7 +609,7 @@
         // 模拟收到目标号码的短信
         var mockSMS = {
             tel: targetNumber,
-            content: '湖北交警提醒：您的车辆鄂AY366Q在XX路段有违章记录，请及时处理。'
+            content: keywords.join('、') + '\n提醒：您的车辆在XX路段有违章记录，请及时处理。'
         };
         
         addLog('模拟收到短信: ' + JSON.stringify(mockSMS), 'success');
@@ -595,6 +623,10 @@
                 isPlaying = false;
                 addLog('警报铃声已手动停止', 'success');
                 updateStatusDisplay();
+                
+                // 恢复原始音量
+                restoreOriginalVolume();
+                
                 api.toast({
                     msg: '警报铃声已停止',
                     duration: 2000,
@@ -605,6 +637,8 @@
                 // 即使停止失败，也要重置状态
                 isPlaying = false;
                 updateStatusDisplay();
+                // 确保恢复原始音量
+                restoreOriginalVolume();
             }
         } else {
             addLog('没有正在播放的警报铃声', 'warning');
@@ -634,6 +668,141 @@
             // 移除播放状态
             statusText.textContent = currentStatus.replace(' (警报播放中)', '');
         }
+    }
+
+    // 初始化音量控制
+    function initVolumeControl() {
+        // 加载保存的警报音量设置
+        var savedAlertVolume = api.getPrefs({sync: true, key: 'alertVolume'});
+        if(savedAlertVolume) {
+            var volumePercent = parseFloat(savedAlertVolume) * 100;
+            document.getElementById('alertVolume').value = volumePercent;
+            document.getElementById('alertVolumeValue').textContent = volumePercent.toFixed(0) + '%';
+        }
+        
+        // 监听音量滑块变化 - 实时更新显示
+        document.getElementById('alertVolume').addEventListener('input', function(e) {
+            var volumePercent = e.target.value;
+            document.getElementById('alertVolumeValue').textContent = volumePercent + '%';
+            
+            // 保存音量设置
+            api.setPrefs({
+                key: 'alertVolume',
+                value: (volumePercent / 100).toString()
+            });
+        });
+        
+        // 监听音量滑块拖动结束 - 只在拖动结束后打印日志
+        document.getElementById('alertVolume').addEventListener('change', function(e) {
+            var volumePercent = e.target.value;
+            addLog('警报音量已设置为: ' + volumePercent + '%', 'success');
+        });
+    }
+
+    // 刷新当前系统音量
+    function refreshCurrentVolume() {
+        if (!acc5Util) {
+            document.getElementById('currentVolume').textContent = '模块未初始化';
+            addLog('acc5Util模块未初始化，无法获取系统音量', 'warning');
+            return;
+        }
+        
+        acc5Util.getVol({}, function(ret, err) {
+            if (ret && ret.data) {
+                var currentVolume = ret.data.system;
+                document.getElementById('currentVolume').textContent = (currentVolume * 100).toFixed(0) + '%';
+                addLog('当前系统音量: ' + (currentVolume * 100).toFixed(0) + '%', 'success');
+            } else {
+                document.getElementById('currentVolume').textContent = '获取失败';
+                addLog('获取系统音量失败: ' + JSON.stringify(err), 'error');
+                
+                // 如果获取失败，可能是模块还未完全初始化，延迟重试
+                setTimeout(function() {
+                    if (acc5Util) {
+                        addLog('重试获取系统音量...', 'warning');
+                        refreshCurrentVolume();
+                    }
+                }, 1000);
+            }
+        });
+    }
+
+    // 保存当前音量并设置新音量
+    var originalVolume = 0; // 保存原始音量
+    
+    function saveAndSetVolume(newVolume) {
+        if (!acc5Util) {
+            addLog('acc5Util模块未初始化，无法控制音量', 'error');
+            return false;
+        }
+        
+        // 先获取当前音量
+        acc5Util.getVol({}, function(ret, err) {
+            if (ret && ret.data) {
+                originalVolume = ret.data.system;
+                addLog('保存原始音量: ' + (originalVolume * 100).toFixed(0) + '%', 'success');
+                
+                // 设置新音量
+                acc5Util.setVol({value: newVolume}, function(setRet, setErr) {
+                    if (setRet) {
+                        addLog('设置警报音量: ' + (newVolume * 100).toFixed(0) + '%', 'success');
+                    } else {
+                        addLog('设置音量失败: ' + JSON.stringify(setErr), 'error');
+                    }
+                });
+            } else {
+                addLog('获取原始音量失败: ' + JSON.stringify(err), 'error');
+            }
+        });
+        
+        return true;
+    }
+    
+    // 恢复原始音量
+    function restoreOriginalVolume() {
+        if (!acc5Util || originalVolume === 0) {
+            return;
+        }
+        
+        acc5Util.setVol({value: originalVolume}, function(ret, err) {
+            if (ret) {
+                addLog('恢复原始音量: ' + (originalVolume * 100).toFixed(0) + '%', 'success');
+            } else {
+                addLog('恢复音量失败: ' + JSON.stringify(err), 'error');
+            }
+        });
+    }
+
+    // 开启线程常驻
+    function startAlive() {
+        console.log('----------------：开启线程常驻');
+        var params = {
+        };
+        console.log('----------------线程常驻对象1：' + moduleProcessAlive);
+        moduleProcessAlive = api.require('moduleProcessAlive_2024');
+        console.log('----------------线程常驻对象2：' + moduleProcessAlive);
+        moduleProcessAlive.startAlive(params, function (ret, err) {
+            console.log('----------------线程常驻返回：' + JSON.stringify(ret));
+            if (ret) {
+                var data = ret.data;
+                addLog('线程常驻已启动', 'success');
+            } else {
+                addLog('线程常驻启动失败: ' + JSON.stringify(err), 'error');
+            }
+        });
+    }
+    // 停止线程常驻-未成功
+    function stopAlive() {
+        var params = {
+        };
+        moduleProcessAlive.stopAlive(params, function (ret, err) {
+            if (ret) {
+                var data = ret.data;
+                addLog('线程常驻已停止', 'success');
+            } else {
+                addLog('线程常驻停止失败: ' + JSON.stringify(err), 'error');
+            }
+        });
     }
 </script>
 
