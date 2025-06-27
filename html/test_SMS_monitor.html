@@ -44,6 +44,20 @@
         .add-keyword-btn {margin-top: 10px;}
         .log-area {margin-top: 20px; max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa;}
         .error-hidden {display: none;}
+
+        /* 音效控制样式 */
+        .sound-control {margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;}
+        .sound-item {margin: 5px 0; display: flex; align-items: center; gap: 10px;}
+        .sound-selector {flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 3px;}
+        
+        /* 号码匹配样式 */
+        .number-disabled {color: #999; font-weight: normal;}
+        .number-enabled {color: #000; font-weight: bold;}
+        
+        /* 开关控制样式 */
+        .section-disabled {opacity: 0.5; pointer-events: none;}
+        .number-input-disabled {color: #999; }
+        .number-input-enabled {color: #000; }
     </style>
 </head>
 <body>
@@ -61,12 +75,13 @@
         </div>
         
         <div class="switch-box">
-            <span>监听目标号码</span>
-            <input type="text" id="targetNumber" placeholder="例如: 12123" value="12123">
+            <span>监听号码</span>
+            <input type="text" id="targetNumber" placeholder="例如: 12123" value="12123" style="text-align: center;">
+            <input type="checkbox" id="enableNumberMatch" style="margin-left: 10px;">
         </div>
 
         
-        <div>
+        <div id="keywordSection">
             <span>短信内容关键词：</span>
             <div id="keywordList">
                 <div class="keyword-item">
@@ -81,9 +96,8 @@
             <button class="btn btn-small add-keyword-btn" onclick="addKeyword()">添加关键词</button>
         </div>
                 
-        <div class="logic-selector">
-            <label>关键词匹配逻辑：</label>
-            <br>
+        <div id="logicSection" class="logic-selector">
+            <label>关键词匹配：</label>
             <input type="radio" id="logicOr" name="logic" value="or" checked>
             <label for="logicOr">逻辑或</label>
             <input type="radio" id="logicAnd" name="logic" value="and">
@@ -102,6 +116,16 @@
                 <input type="range" id="alertVolume" class="volume-slider" min="0" max="100" value="30">
                 <span id="alertVolumeValue" class="volume-value">30%</span>
             </div>
+        </div>
+
+        <div class="sound-control">
+            <label>音效选择：</label>
+            <button class="btn btn-small" id="testSoundBtn" onclick="testSound()">试听</button>
+            <br>
+            <input type="radio" id="soundShort" name="sound" value="short_ring.mp3" checked>
+            <label for="soundShort">简短铃声</label>
+            <input type="radio" id="soundPolice" name="sound" value="policeCar_alert.mp3">
+            <label for="soundPolice">警车警报</label>
         </div>
     </div>
     
@@ -123,11 +147,16 @@
     var smsListenerModule = null; // 短信监听模块
     var acc5Util = null; // 引入acc5Util模块-控制音量
     var moduleProcessAlive = null; // YB-自己的进程守护模块，用于保活
+    var moduleNotification = null; // YB-自己的通知模块
     var isListening = false; // 是否开启监听
     var targetNumber = '12123'; // 监听短信的目标号码
     var keywords = ['湖北交警', '鄂AY366Q']; // 初始化默认关键词
     var matchLogic = 'or'; // 逻辑：'or' 或 'and'
     var isPlaying = false; // 是否正在播放警报铃声
+    var selectedSound = 'short_ring.mp3'; // 当前选择的音效文件
+    var isTestPlaying = false; // 是否正在试听音效
+    var enableNumberMatch = false; // 是否启用号码匹配
+    var isDialogShowing = false; // 是否正在显示对话框
 
     apiready = function() {
         // 初始化UI
@@ -152,6 +181,14 @@
                 updateStatusDisplay();
                 addLog('页面暂停，停止警报铃声', 'warning');
             }
+            
+            // 重置试听状态
+            if (isTestPlaying) {
+                api.stopPlay();
+                isTestPlaying = false;
+                document.getElementById('testSoundBtn').textContent = '试听';
+                addLog('页面暂停，停止音效试听', 'warning');
+            }
         });
     };
 
@@ -167,10 +204,15 @@
             smsSwitch.checked = true;
             statusText.textContent = '当前状态: 监听中';
             isListening = true;
+            // 启用相关区域
+            enableSections();
             // 延迟启动监听，确保模块已初始化
             setTimeout(function() {
                 startSMSListener();
             }, 500);
+        } else {
+            // 禁用相关区域
+            disableSections();
         }
         
         // 监听开关变化
@@ -178,9 +220,13 @@
             if(e.target.checked) {
                 statusText.textContent = '当前状态: 正在启动监听...';
                 startSMSListener();
+                // 启用相关区域
+                enableSections();
             } else {
                 statusText.textContent = '当前状态: 已停止监听';
                 stopSMSListener();
+                // 禁用相关区域
+                disableSections();
             }
             // 保存设置
             api.setPrefs({
@@ -196,6 +242,16 @@
             targetNumber = savedTargetNumber;
         }
         
+        // 加载号码匹配设置
+        var savedNumberMatch = api.getPrefs({sync: true, key: 'enableNumberMatch'});
+        if(savedNumberMatch === 'true') {
+            enableNumberMatch = true;
+            document.getElementById('enableNumberMatch').checked = true;
+            updateNumberDisplay(true);
+        } else {
+            updateNumberDisplay(false);
+        }
+        
         // 监听号码输入变化
         document.getElementById('targetNumber').addEventListener('input', function(e) {
             targetNumber = e.target.value;
@@ -203,6 +259,20 @@
                 key: 'targetNumber',
                 value: targetNumber
             });
+        });
+        
+        // 监听号码匹配checkbox变化
+        document.getElementById('enableNumberMatch').addEventListener('change', function(e) {
+            enableNumberMatch = e.target.checked;
+            updateNumberDisplay(enableNumberMatch);
+            
+            // 保存设置
+            api.setPrefs({
+                key: 'enableNumberMatch',
+                value: enableNumberMatch.toString()
+            });
+            
+            addLog('号码匹配已' + (enableNumberMatch ? '启用' : '禁用'), 'success');
         });
         
         // 加载关键词
@@ -233,6 +303,9 @@
 
         // 初始化音量控制
         initVolumeControl();
+        
+        // 初始化音效控制
+        initSoundControl();
     }
 
     // 更新关键词UI
@@ -296,7 +369,8 @@
             // 使用正确的smsListener模块，用于监听短信
             smsListenerModule = api.require('smsListener');
             moduleProcessAlive = api.require('moduleProcessAlive_2024'); // YB-自己的进程守护模块，用于保活
-            addLog('短信监听模块初始化成功', 'success');
+            moduleNotification = api.require('moduleNotification_2022'); // YB-自己的通知模块
+            addLog('短信监听模块初始化成功，另有进程守护模块和通知模块', 'success');
         } catch (e) {
             addLog('短信监听模块初始化失败: ' + e.message, 'error');
             showError('短信监听模块不可用，请检查APICloud配置');
@@ -429,18 +503,24 @@
         
         addLog('收到短信来自: ' + sms.tel + ', 内容: ' + (sms.content ? sms.content.substr(0, 30) + '...' : '无内容'));
         
-        // 检查是否是目标号码   -测试阶段，先不限制目标号码
-        // if(sms.tel.indexOf(targetNumber) !== -1) {
-        {
-            addLog('检测到目标号码短信', 'success');
-            
-            // 检查短信内容是否匹配关键词
-            if (checkContentMatch(sms.content)) {
-                addLog('短信内容匹配关键词，触发提醒', 'success');
-                playAlert(sms.content);
-            } else {
-                addLog('短信内容不匹配关键词，忽略', 'success');
+        // 如果启用了号码匹配，先检查号码
+        if (enableNumberMatch) {
+            if (sms.tel.indexOf(targetNumber) === -1) {
+                addLog('号码不匹配，忽略短信', 'success');
+                return;
             }
+            addLog('号码匹配成功: ' + sms.tel, 'success');
+        } else {
+            addLog('号码匹配已禁用，跳过号码检查', 'success');
+        }
+        
+        // 检查短信内容是否匹配关键词
+        if (checkContentMatch(sms.content)) {
+            addLog('短信内容匹配关键词，触发提醒', 'success');
+            playAlert(sms.content);
+            showNotification('【紧急】交警短信', sms.content);
+        } else {
+            addLog('短信内容不匹配关键词，忽略', 'success');
         }
     }
     // 判断关键词是否匹配
@@ -473,10 +553,12 @@
             }
             
             // 播放提醒音效
-            var audioPath = 'widget://res/policeCar_alert.mp3'; // 需要准备一个提醒音效
+            // 警车长音效：policeCar_alert.mp3
+            // 简短三秒音效：short_ring.mp3
+            var audioPath = 'widget://res/' + selectedSound; // 需要准备一个提醒音效
             
             isPlaying = true;
-            addLog('开始播放警报铃声', 'success');
+            addLog('开始连续播放警报铃声，点击"我知道了"停止', 'success');
             updateStatusDisplay();
 
             // 获取设置的警报音量
@@ -486,62 +568,84 @@
             // 保存当前音量并设置警报音量
             saveAndSetVolume(alertVolume);
             
-            api.startPlay({
-                path: audioPath,
-            }, function(ret, err) {
-                if (ret) {
-                    isPlaying = false;
-                    addLog('警报铃声播放完成', 'success');
-                    updateStatusDisplay();
-                    
-                    // 恢复原始音量
-                    restoreOriginalVolume();
-                    
-                    api.toast({
-                        msg: '播放完成！',
-                        duration: 3000,
-                        location: 'top'
-                    });
+            // 开始连续播放铃声
+            startContinuousPlay(audioPath, smsContent);
 
-                    // 显示提醒对话框
-                    api.alert({
-                        title: '交警短信提醒',
-                        msg: '您收到了来自交警的短信，请及时处理！\n\n短信内容：' + smsContent,
-                        buttons: ['我知道了']
-                    }, function(ret) {
-                        // 用户点击后确保停止播放
-                        if (isPlaying) {
-                            api.stopPlay();
-                            isPlaying = false;
-                            updateStatusDisplay();
-                            // 确保恢复原始音量
-                            restoreOriginalVolume();
-                        }
-                    });
-                } else {
-                    isPlaying = false;
-                    addLog('警报铃声播放失败: ' + JSON.stringify(err), 'error');
-                    updateStatusDisplay();
-                    // 播放失败也要恢复原始音量
-                    restoreOriginalVolume();
-                    api.alert({
-                        msg: JSON.stringify(err)
-                    });
-                }
-            });
+            // 显示提醒对话框（如果还没有显示）
+            if (!isDialogShowing) {
+                showAlertDialog(smsContent);
+            }
+            
         } catch (e) {
             isPlaying = false;
             addLog('警报铃声播放异常: ' + e.message, 'error');
             updateStatusDisplay();
             // 异常情况下也要恢复原始音量
             restoreOriginalVolume();
-            // 如果音频模块不可用，只显示对话框
-            api.alert({
-                title: '交警短信提醒',
-                msg: '您收到了来自交警的短信，请及时处理！',
-                buttons: ['我知道了']
-            });
         }
+    }
+
+    // 连续播放函数
+    function startContinuousPlay(audioPath, smsContent) {
+        if (!isPlaying) {
+            return; // 如果已经停止播放，退出循环
+        }
+        
+        api.startPlay({
+            path: audioPath,
+        }, function(ret, err) {
+            if (ret) {
+                // 播放完成，如果还在播放状态，继续播放下一遍
+                if (isPlaying) {
+                    addLog('警报铃声播放完成，继续下一遍...', 'success');
+                    // 短暂延迟后继续播放
+                    setTimeout(function() {
+                        if (isPlaying) {
+                            startContinuousPlay(audioPath, smsContent);
+                        }
+                    }, 500); // 500ms延迟后继续
+                } else {
+                    addLog('警报铃声已停止', 'success');
+                    updateStatusDisplay();
+                    // 恢复原始音量
+                    restoreOriginalVolume();
+                }
+            } else {
+                isPlaying = false;
+                addLog('警报铃声播放失败: ' + JSON.stringify(err), 'error');
+                updateStatusDisplay();
+                // 播放失败也要恢复原始音量
+                restoreOriginalVolume();
+                
+            }
+        });
+    }
+
+    // 显示提醒对话框
+    function showAlertDialog(smsContent) {
+        // 如果已经有对话框在显示，则不重复显示
+        if (isDialogShowing) {
+            addLog('对话框已在显示中，跳过重复显示', 'warning');
+            return;
+        }
+        
+        isDialogShowing = true;
+        api.alert({
+            title: '交警短信提醒',
+            msg: '短信内容：' + smsContent,
+            buttons: ['我知道了']
+        }, function(ret) {
+            // 用户点击后停止播放
+            isDialogShowing = false; // 重置对话框状态
+            if (isPlaying) {
+                api.stopPlay();
+                isPlaying = false;
+                addLog('用户点击确认，停止警报铃声', 'success');
+                updateStatusDisplay();
+                // 确保恢复原始音量
+                restoreOriginalVolume();
+            }
+        });
     }
 
     // 显示错误信息
@@ -655,7 +759,7 @@
         return isPlaying;
     }
 
-    // 更新状态显示
+    // 更新铃声播放状态显示
     function updateStatusDisplay() {
         var statusText = document.getElementById('statusText');
         var currentStatus = statusText.textContent;
@@ -780,7 +884,6 @@
         };
         console.log('----------------线程常驻对象1：' + moduleProcessAlive);
         moduleProcessAlive = api.require('moduleProcessAlive_2024');
-        console.log('----------------线程常驻对象2：' + moduleProcessAlive);
         moduleProcessAlive.startAlive(params, function (ret, err) {
             console.log('----------------线程常驻返回：' + JSON.stringify(ret));
             if (ret) {
@@ -803,6 +906,139 @@
                 addLog('线程常驻停止失败: ' + JSON.stringify(err), 'error');
             }
         });
+    }
+    // 显示通知
+    function showNotification(title, content){
+			var params = {
+				title : title,
+				content : content
+			};
+			moduleNotification.showNotification(params, function(ret, err){
+                if (ret) {
+                    addLog('显示通知成功: ' + JSON.stringify(ret), 'success');
+                } else {
+                    addLog('显示通知失败: ' + JSON.stringify(err), 'error');
+                }
+            });
+		}
+
+    // 初始化音效控制
+    function initSoundControl() {
+        // 加载保存的音效设置
+        var savedSound = api.getPrefs({sync: true, key: 'selectedSound'});
+        if(savedSound) {
+            selectedSound = savedSound;
+            if(selectedSound === 'short_ring.mp3') {
+                document.getElementById('soundShort').checked = true;
+                document.getElementById('soundPolice').checked = false;
+            } else {
+                document.getElementById('soundShort').checked = false;
+                document.getElementById('soundPolice').checked = true;
+            }
+        }
+        
+        // 监听音效选择变化
+        document.querySelectorAll('input[name="sound"]').forEach(function(radio) {
+            radio.addEventListener('change', function(e) {
+                if(e.target.checked) {
+                    selectedSound = e.target.value;
+                    
+                    // 保存音效设置
+                    api.setPrefs({
+                        key: 'selectedSound',
+                        value: selectedSound
+                    });
+                    
+                    var soundName = selectedSound === 'short_ring.mp3' ? '简短铃声 (3秒)' : '警车警报 (长音)';
+                    addLog('警报音效已更改为: ' + soundName, 'success');
+                }
+            });
+        });
+    }
+
+    // 试听音效
+    function testSound() {
+        var testBtn = document.getElementById('testSoundBtn');
+        
+        if (isTestPlaying) {
+            // 如果正在试听，则停止试听
+            try {
+                api.stopPlay();
+                isTestPlaying = false;
+                testBtn.textContent = '试听';
+                addLog('音效试听已停止', 'success');
+            } catch (e) {
+                addLog('停止试听失败: ' + e.message, 'error');
+            }
+            return;
+        }
+        
+        if (isPlaying) {
+            api.toast({
+                msg: '请先停止当前播放的警报铃声',
+                duration: 2000,
+                location: 'top'
+            });
+            return;
+        }
+        
+        try {
+            var audioPath = 'widget://res/' + selectedSound;
+            addLog('开始试听音效: ' + selectedSound, 'success');
+            
+            isTestPlaying = true;
+            testBtn.textContent = '停止';
+            
+            api.startPlay({
+                path: audioPath,
+            }, function(ret, err) {
+                if (ret) {
+                    addLog('音效试听完成', 'success');
+                } else {
+                    addLog('音效试听失败: ' + JSON.stringify(err), 'error');
+                }
+                
+                // 试听完成后恢复按钮状态
+                isTestPlaying = false;
+                testBtn.textContent = '试听';
+            });
+        } catch (e) {
+            addLog('音效试听异常: ' + e.message, 'error');
+            isTestPlaying = false;
+            testBtn.textContent = '试听';
+        }
+    }
+
+    // 更新号码显示样式
+    function updateNumberDisplay(enabled) {
+        var numberLabel = document.querySelector('.switch-box:nth-child(2) span');
+        var numberInput = document.getElementById('targetNumber');
+        if (enabled) {
+            numberLabel.classList.add('number-enabled');
+            numberLabel.classList.remove('number-disabled');
+            numberInput.classList.remove('number-input-disabled');
+            numberInput.classList.add('number-input-enabled');
+        } else {
+            numberLabel.classList.add('number-disabled');
+            numberLabel.classList.remove('number-enabled');
+            numberInput.classList.add('number-input-disabled');
+            numberInput.classList.remove('number-input-enabled');
+        }
+    }
+
+    
+    // 启用相关区域
+    function enableSections() {
+        document.getElementById('keywordSection').classList.remove('section-disabled');
+        document.getElementById('logicSection').classList.remove('section-disabled');
+        addLog('已启用关键词和逻辑匹配区域', 'success');
+    }
+    
+    // 禁用相关区域
+    function disableSections() {
+        document.getElementById('keywordSection').classList.add('section-disabled');
+        document.getElementById('logicSection').classList.add('section-disabled');
+        addLog('已禁用关键词和逻辑匹配区域', 'success');
     }
 </script>
 
