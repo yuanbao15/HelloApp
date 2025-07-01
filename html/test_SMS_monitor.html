@@ -58,6 +58,8 @@
         .section-disabled {opacity: 0.5; pointer-events: none;}
         .number-input-disabled {color: #999; }
         .number-input-enabled {color: #000; }
+        
+
     </style>
 </head>
 <body>
@@ -136,7 +138,8 @@
         <button class="btn" onclick="checkSMSPermission()">检查权限</button>
         <button class="btn" onclick="clearLogs()">清空日志</button>
         <button class="btn" onclick="manualTestAlert()">手动测试警报</button>
-        <button class="btn" onclick="stopAlert()">停止警报铃声</button>
+        <!-- <button class="btn" onclick="stopAlert()">停止警报铃声</button> -->
+        <button class="btn" onclick="showStatistics()">查看统计</button>
     </div>
     
     <div id="logArea" class="log-area"></div>
@@ -157,6 +160,10 @@
     var isTestPlaying = false; // 是否正在试听音效
     var enableNumberMatch = false; // 是否启用号码匹配
     var isDialogShowing = false; // 是否正在显示对话框
+    
+    // 统计相关变量
+    var alertRecords = []; // 警报记录数组
+    var currentYear = new Date().getFullYear(); // 当前年份
 
     apiready = function() {
         // 初始化UI
@@ -170,6 +177,9 @@
 
         // 初始化acc5Util模块
         initAcc5Util();
+        
+        // 加载警报记录
+        loadAlertRecords();
         
         // 页面卸载时确保停止播放
         api.addEventListener({
@@ -525,6 +535,9 @@
             addLog('短信内容匹配关键词，触发提醒', 'success');
             playAlert(sms.content);
             showNotification('【紧急】交警短信', sms.content);
+            
+            // 记录警报事件
+            recordAlert(sms);
         } else {
             addLog('短信内容不匹配关键词，忽略', 'success');
         }
@@ -724,6 +737,54 @@
         
         addLog('模拟收到短信: ' + JSON.stringify(mockSMS), 'success');
         processSMS(mockSMS);
+        
+        // 添加一些测试数据用于演示统计功能
+        addTestData();
+    }
+    
+    // 添加测试数据
+    function addTestData() {
+        // 只在开发模式下添加测试数据
+        if (alertRecords.length < 5) {
+            var testData = [
+                {
+                    tel: '12123',
+                    content: '【TEST】湖北交警提醒：您的车辆鄂AY366Q在XX路段有违停记录，请及时处理。'
+                },
+                {
+                    tel: '12123', 
+                    content: '【TEST】湖北交警提醒：鄂AY366Q车辆在YY路段违停，请尽快处理。'
+                },
+                {
+                    tel: '12123',
+                    content: '【TEST】湖北交警提醒：鄂AY366Q在ZZ路段有违章，请及时处理。'
+                }
+            ];
+            
+            testData.forEach(function(sms, index) {
+                // 创建不同时间的测试记录
+                var testDate = new Date();
+                testDate.setDate(testDate.getDate() - (index + 1) * 7); // 每周一条记录
+                
+                var testRecord = {
+                    id: Date.now() + index, // 唯一标识：毫秒级时间戳+index，确保唯一，位数不变
+                    timestamp: testDate.toISOString(),
+                    date: testDate.toISOString().split('T')[0], // 日期 2025-06-24
+                    time: testDate.toLocaleTimeString(), // 时间 10:00:00
+                    phoneNumber: sms.tel, // 手机号
+                    content: sms.content, // 短信内容
+                    year: testDate.getFullYear(),
+                    month: testDate.getMonth() + 1,
+                    day: testDate.getDate(),
+                    weekday: testDate.getDay()
+                };
+                
+                alertRecords.push(testRecord);
+            });
+            
+            saveAlertRecords();
+            addLog('已添加' + testData.length + '条测试数据用于演示统计功能', 'success');
+        }
     }
     // 用于停止警报铃声
     function stopAlert() {
@@ -1071,6 +1132,71 @@
         document.getElementById('logicSection').classList.add('section-disabled');
         addLog('已禁用关键词和逻辑匹配区域', 'success');
     }
+    
+    // ==================== 统计功能相关函数 ====================
+    
+    // 记录警报事件
+    function recordAlert(sms) {
+        var record = {
+            id: Date.now(),
+            timestamp: new Date().toISOString(),
+            date: new Date().toISOString().split('T')[0], // YYYY-MM-DD格式
+            time: new Date().toLocaleTimeString(),
+            phoneNumber: sms.tel,
+            content: sms.content,
+            year: new Date().getFullYear(),
+            month: new Date().getMonth() + 1,
+            day: new Date().getDate(),
+            weekday: new Date().getDay() // 0-6, 0是周日
+        };
+        
+        alertRecords.push(record);
+        saveAlertRecords();
+        addLog('已记录警报事件: ' + record.date + ' ' + record.time, 'success');
+    }
+    
+    // 保存警报记录到本地存储
+    function saveAlertRecords() {
+        try {
+            api.setPrefs({
+                key: 'alertRecords_' + currentYear,
+                value: JSON.stringify(alertRecords)
+            });
+        } catch (e) {
+            addLog('保存警报记录失败: ' + e.message, 'error');
+        }
+    }
+    
+    // 从本地存储加载警报记录
+    function loadAlertRecords() {
+        try {
+            var savedRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+            if (savedRecords) {
+                alertRecords = JSON.parse(savedRecords);
+                addLog('已加载' + alertRecords.length + '条警报记录', 'success');
+            } else {
+                alertRecords = [];
+                addLog('未找到历史警报记录', 'info');
+            }
+        } catch (e) {
+            alertRecords = [];
+            addLog('加载警报记录失败: ' + e.message, 'error');
+        }
+    }
+    
+    // 显示统计页面
+    function showStatistics() {
+        // 打开独立的统计页面
+        api.openWin({
+            name: 'test_SMS_monitor_statistics',
+            url: './test_SMS_monitor_statistics.html',
+            pageParam: {
+                currentYear: currentYear
+            }
+        });
+    }
+    
+
 </script>
 
 </body>

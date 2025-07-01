@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
+    <title>违停警报统计</title>
+    <link rel="stylesheet" href="../css/api.css">
+    <style>
+        .container {padding: 15px;}
+        .stats-container {font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;}
+        .stats-header {background: #007aff; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center;}
+        .stats-header button:hover {opacity: 0.8;}
+        .stats-summary .grid-item {transition: transform 0.2s;}
+        .stats-summary .grid-item:hover {transform: scale(1.05);}
+        .stats-charts {transition: all 0.3s ease;}
+        .stats-charts:hover {box-shadow: 0 2px 8px rgba(0,0,0,0.1);}
+        .chart-bar {transition: height 0.5s ease;}
+        .chart-bar:hover {opacity: 0.8;}
+        .records-item {transition: all 0.2s ease;}
+        .records-item:hover {background: #f0f0f0 !important; transform: translateX(2px);}
+        .stats-actions button {transition: all 0.2s ease;}
+        .stats-actions button:hover {transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.2);}
+        .stats-actions button:active {transform: translateY(0);}
+        .btn {padding: 10px 10px; margin: 5px; background: #007aff; color: white; border: none; border-radius: 5px; cursor: pointer;}
+        .btn:disabled {background: #ccc; cursor: not-allowed; opacity: 0.6;}
+        .btn:enabled:hover {background: #0056cc;}
+        .btn-danger {background: #ff4444;}
+        .btn-danger:hover {background: #cc0000;}
+        .btn-success {background: #44aa44;}
+        .btn-success:hover {background: #338833;}
+        
+        /* 多选模式样式 */
+        .records-item.multi-select { border: 2px solid #007aff; }
+        .records-item.multi-select.selected { background: #e3f2fd !important; }
+        .selection-indicator { 
+            width: 20px; 
+            height: 20px; 
+            border: 2px solid #007aff; 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .selection-indicator.selected { 
+            background: #007aff; 
+            color: white; 
+        }
+    </style>
+</head>
+<body>
+<div class="stats-container">
+    <div class="stats-header">
+        <h2 style="margin: 0;" id="pageTitle">年度违停警报统计</h2>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <select id="yearSelector" onchange="changeYear(this.value)" style="padding: 5px; border: none; border-radius: 3px; background: white; color: #333;">
+                <!-- 年份选项将在这里动态生成 -->
+            </select>
+            <button onclick="goBack()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
+        </div>
+    </div>
+    
+    <div class="stats-content" style="padding: 15px;">
+        <div class="stats-summary" style="background: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="margin-top: 0; color: #333;">统计概览</h3>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="font-size: 24px; font-weight: bold; color: #ff4444;" id="totalAlerts">0</div>
+                    <div style="font-size: 12px; color: #666;">总警报次数</div>
+                </div>
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="font-size: 24px; font-weight: bold; color: #007aff;" id="avgPerMonth">0</div>
+                    <div style="font-size: 12px; color: #666;">月平均次数</div>
+                </div>
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="font-size: 24px; font-weight: bold; color: #44aa44;" id="maxMonth">0</div>
+                    <div style="font-size: 12px; color: #666;">最高月次数</div>
+                </div>
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="font-size: 24px; font-weight: bold; color: #ff8800;" id="lastAlert">-</div>
+                    <div style="font-size: 12px; color: #666;">最近警报</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="stats-charts" style="margin-bottom: 20px;">
+            <h3 style="color: #333;">月度趋势</h3>
+            <div id="monthlyChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
+                <!-- 月度柱状图将在这里生成 -->
+            </div>
+        </div>
+        
+        <div class="stats-charts" style="margin-bottom: 20px;">
+            <h3 style="color: #333;">星期分布</h3>
+            <div id="weekdayChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
+                <!-- 星期柱状图将在这里生成 -->
+            </div>
+        </div>
+        
+        <div class="stats-charts" style="margin-bottom: 20px;">
+            <h3 style="color: #333;">时段分布</h3>
+            <div id="timeChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
+                <!-- 时段柱状图将在这里生成 -->
+            </div>
+        </div>
+        
+        <div class="stats-actions" style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <button class="btn" onclick="exportStatistics()" style="flex: 1;">导出数据</button>
+            <button class="btn btn-success" onclick="shareStatistics()" style="flex: 1;">分享统计</button>
+            <button class="btn" onclick="toggleMultiSelect()" style="flex: 1;" id="multiSelectBtn">多选删除</button>
+            <button class="btn btn-danger" onclick="clearStatistics()" style="flex: 1;">清空记录</button>
+        </div>
+        
+        <div id="multiSelectActions" style="display: none; margin-bottom: 20px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
+                <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
+                <button class="btn btn-danger" onclick="deleteSelectedRecords()" style="flex: 1;">删除选中</button>
+            </div>
+            <div style="text-align: center; color: #666; font-size: 12px;">
+                已选择 <span id="selectedCount">0</span> 条记录
+            </div>
+        </div>
+        
+        <div class="stats-list">
+            <h3 style="color: #333;">详细记录</h3>
+            <div id="recordsList" style="max-height: 300px; overflow-y: auto;">
+                <!-- 详细记录将在这里生成 -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="../script/api.js"></script>
+<script>
+    var alertRecords = []; // 警报记录数组
+    var currentYear = new Date().getFullYear(); // 当前年份
+    var isMultiSelectMode = false; // 是否处于多选模式
+    var selectedRecords = []; // 选中的记录ID数组
+    var longPressTimer = null; // 长按计时器
+
+    apiready = function() {
+        // 获取页面参数
+        var pageParam = api.pageParam;
+        if (pageParam && pageParam.currentYear) {
+            currentYear = pageParam.currentYear;
+        }
+        
+        // 设置页面标题
+        document.getElementById('pageTitle').textContent = currentYear + '年违停警报统计';
+        
+        // 动态生成年份选择器选项
+        generateYearOptions();
+        
+        // 设置年份选择器默认值
+        document.getElementById('yearSelector').value = currentYear;
+        
+        // 加载警报记录
+        loadAlertRecords();
+        
+        // 生成统计数据
+        generateStatistics();
+        
+        // 监听返回键
+        api.addEventListener({
+            name: 'keyback'
+        }, function(ret, err) {
+            goBack();
+        });
+    };
+
+    // 返回上一页
+    function goBack() {
+        api.closeWin();
+    }
+
+    // 动态生成年份选择器选项
+    function generateYearOptions() {
+        var yearSelector = document.getElementById('yearSelector');
+        var optionsHTML = '';
+        
+        // 生成当前年份及前两年的选项
+        for (var i = 0; i < 3; i++) {
+            var year = currentYear - i;
+            var selected = i === 0 ? ' selected' : '';
+            optionsHTML += '<option value="' + year + '"' + selected + '>' + year + '年</option>';
+        }
+        
+        yearSelector.innerHTML = optionsHTML;
+    }
+
+    // 从本地存储加载警报记录
+    function loadAlertRecords() {
+        try {
+            var savedRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+            if (savedRecords) {
+                alertRecords = JSON.parse(savedRecords);
+                console.log('已加载' + alertRecords.length + '条警报记录');
+            } else {
+                alertRecords = [];
+                console.log('未找到历史警报记录');
+            }
+        } catch (e) {
+            alertRecords = [];
+            console.log('加载警报记录失败: ' + e.message);
+        }
+    }
+
+    // 生成统计数据
+    function generateStatistics() {
+        // 更新统计概览
+        updateSummaryStats();
+        
+        // 生成月度趋势图
+        generateMonthlyChart();
+        
+        // 生成星期分布图
+        generateWeekdayChart();
+        
+        // 生成时段分布图
+        generateTimeChart();
+        
+        // 生成详细记录列表
+        generateRecordsList();
+    }
+
+    // 更新统计概览
+    function updateSummaryStats() {
+        var totalAlerts = alertRecords.length;
+        var avgPerMonth = totalAlerts > 0 ? (totalAlerts / 12).toFixed(1) : 0;
+        
+        // 计算最高月次数
+        var monthlyData = new Array(12).fill(0);
+        alertRecords.forEach(function(record) {
+            if (record.year === currentYear) {
+                if (record.month >= 1 && record.month <= 12) {
+                    monthlyData[record.month - 1]++;
+                }
+            }
+        });
+        var maxMonth = Math.max(...monthlyData);
+        
+        // 计算最近警报时间
+        var lastAlert = '-';
+        if (alertRecords.length > 0) {
+            var sortedRecords = alertRecords.slice().sort(function(a, b) {
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            var lastRecord = sortedRecords[0];
+            var lastDate = new Date(lastRecord.timestamp);
+            var now = new Date();
+            var diffDays = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0) {
+                lastAlert = '今天';
+            } else if (diffDays === 1) {
+                lastAlert = '昨天';
+            } else if (diffDays < 7) {
+                lastAlert = diffDays + '天前';
+            } else {
+                lastAlert = lastRecord.date;
+            }
+        }
+        
+        document.getElementById('totalAlerts').textContent = totalAlerts;
+        document.getElementById('avgPerMonth').textContent = avgPerMonth;
+        document.getElementById('maxMonth').textContent = maxMonth;
+        document.getElementById('lastAlert').textContent = lastAlert;
+    }
+
+    // 生成月度趋势图
+    function generateMonthlyChart() {
+        var monthlyData = new Array(12).fill(0);
+        var monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+        
+        // 统计每月警报次数
+        alertRecords.forEach(function(record) {
+            if (record.year === currentYear) {
+                if (record.month >= 1 && record.month <= 12) {
+                    monthlyData[record.month - 1]++;
+                }
+            }
+        });
+        
+        var maxValue = Math.max(...monthlyData);
+        var chartHTML = '';
+        
+        monthlyData.forEach(function(count, index) {
+            var height = maxValue > 0 ? (count / maxValue * 150) : 0;
+            var color = count > 0 ? '#ff4444' : '#ddd';
+            
+            chartHTML += `
+                <div style="display: flex; flex-direction: column; align-items: center; height: 100%;">
+                    <div class="chart-bar" style="width: 20px; height: 0px; background: ${color}; border-radius: 3px; margin-bottom: 5px; transition: height 0.8s ease;" title="${monthNames[index]}: ${count}次" data-height="${height}"></div>
+                    <div style="font-size: 10px; color: #666;">${monthNames[index]}</div>
+                    <div style="font-size: 8px; color: #999;">${count}</div>
+                </div>
+            `;
+        });
+        
+        document.getElementById('monthlyChart').innerHTML = chartHTML;
+        
+        // 添加动画效果
+        setTimeout(function() {
+            var bars = document.querySelectorAll('#monthlyChart .chart-bar');
+            bars.forEach(function(bar) {
+                var height = bar.getAttribute('data-height');
+                bar.style.height = height + 'px';
+            });
+        }, 100);
+    }
+
+    // 生成星期分布图
+    function generateWeekdayChart() {
+        var weekdayData = new Array(7).fill(0);
+        var weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        
+        // 统计每周几的警报次数
+        alertRecords.forEach(function(record) {
+            if (record.year === currentYear) {
+                if (record.weekday >= 0 && record.weekday < 7) {
+                    weekdayData[record.weekday]++;
+                }
+            }
+        });
+        
+        var maxValue = Math.max(...weekdayData);
+        var chartHTML = '';
+        
+        weekdayData.forEach(function(count, index) {
+            var height = maxValue > 0 ? (count / maxValue * 150) : 0;
+            var color = count > 0 ? '#007aff' : '#ddd';
+            
+            chartHTML += `
+                <div style="display: flex; flex-direction: column; align-items: center; height: 100%;">
+                    <div class="chart-bar" style="width: 20px; height: 0px; background: ${color}; border-radius: 3px; margin-bottom: 5px; transition: height 0.8s ease;" title="${weekdayNames[index]}: ${count}次" data-height="${height}"></div>
+                    <div style="font-size: 10px; color: #666;">${weekdayNames[index]}</div>
+                    <div style="font-size: 8px; color: #999;">${count}</div>
+                </div>
+            `;
+        });
+        
+        document.getElementById('weekdayChart').innerHTML = chartHTML;
+        
+        // 添加动画效果
+        setTimeout(function() {
+            var bars = document.querySelectorAll('#weekdayChart .chart-bar');
+            bars.forEach(function(bar) {
+                var height = bar.getAttribute('data-height');
+                bar.style.height = height + 'px';
+            });
+        }, 200);
+    }
+
+    // 生成时段分布图
+    function generateTimeChart() {
+        var timeData = new Array(24).fill(0);
+        var timeLabels = [];
+        
+        // 生成时段标签
+        for (var i = 0; i < 24; i++) {
+            timeLabels.push(i + '时');
+        }
+        
+        // 统计每小时的警报次数
+        alertRecords.forEach(function(record) {
+            if (record.year === currentYear) {
+                var hour = parseInt(record.time.split(':')[0]);
+                if (!isNaN(hour) && hour >= 0 && hour < 24) {
+                    timeData[hour]++;
+                }
+            }
+        });
+        
+        var maxValue = Math.max(...timeData);
+        var chartHTML = '';
+        
+        // 只显示有数据的时段，最多显示12个柱子
+        var nonZeroData = timeData.map(function(count, index) {
+            return { count: count, hour: index };
+        }).filter(function(item) {
+            return item.count > 0;
+        });
+        
+        // 如果数据点太多，进行分组
+        if (nonZeroData.length > 12) {
+            var groupedData = [];
+            var groupSize = Math.ceil(nonZeroData.length / 12);
+            
+            for (var i = 0; i < nonZeroData.length; i += groupSize) {
+                var group = nonZeroData.slice(i, i + groupSize);
+                var totalCount = group.reduce(function(sum, item) { return sum + item.count; }, 0);
+                var avgHour = Math.round(group.reduce(function(sum, item) { return sum + item.hour; }, 0) / group.length);
+                groupedData.push({ count: totalCount, hour: avgHour });
+            }
+            nonZeroData = groupedData;
+        }
+        
+        nonZeroData.forEach(function(item) {
+            var height = maxValue > 0 ? (item.count / maxValue * 150) : 0;
+            var color = '#44aa44';
+            
+            chartHTML += `
+                <div style="display: flex; flex-direction: column; align-items: center; height: 100%;">
+                    <div class="chart-bar" style="width: 15px; height: 0px; background: ${color}; border-radius: 3px; margin-bottom: 5px; transition: height 0.8s ease;" title="${item.hour}时: ${item.count}次" data-height="${height}"></div>
+                    <div style="font-size: 8px; color: #666;">${item.hour}时</div>
+                    <div style="font-size: 8px; color: #999;">${item.count}</div>
+                </div>
+            `;
+        });
+        
+        document.getElementById('timeChart').innerHTML = chartHTML;
+        
+        // 添加动画效果
+        setTimeout(function() {
+            var bars = document.querySelectorAll('#timeChart .chart-bar');
+            bars.forEach(function(bar) {
+                var height = bar.getAttribute('data-height');
+                bar.style.height = height + 'px';
+            });
+        }, 300);
+    }
+
+    // 生成详细记录列表
+    function generateRecordsList() {
+        var recordsList = document.getElementById('recordsList');
+        var recordsHTML = '';
+        
+        if (alertRecords.length === 0) {
+            recordsHTML = '<div style="text-align: center; color: #999; padding: 20px;">暂无警报记录</div>';
+        } else {
+            // 按时间倒序排列
+            var sortedRecords = alertRecords.slice().sort(function(a, b) {
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            
+            sortedRecords.forEach(function(record) {
+                var date = new Date(record.timestamp);
+                var weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                
+                // 截取短信内容，避免过长
+                var shortContent = record.content.length > 50 ? record.content.substring(0, 50) + '...' : record.content;
+                
+                // 判断是否为测试记录：测试记录为浅灰色，正常记录为黑色，颜色区分便于阅读
+                var isTestRecord = record.content.indexOf('测试') !== -1 || record.content.indexOf('TEST') !== -1 || record.content.indexOf('Test') !== -1;
+                var textColor = isTestRecord ? '#999' : '#333'; // 测试记录为浅灰色，正常记录为黑色
+                var bgColor = isTestRecord ? '#f0f0f0' : '#f8f8f8'; // 测试记录背景色稍浅
+                var borderColor = isTestRecord ? '#ccc' : '#ff4444'; // 测试记录边框为灰色
+                
+                var isSelected = selectedRecords.indexOf(record.id.toString()) !== -1;
+                var selectionStyle = isSelected ? 'background: #007aff; color: white;' : '';
+                var selectionIcon = isSelected ? '✓' : '';
+                
+                // 允许通过长按触发多选删除
+                recordsHTML += `
+                    <div class="records-item" 
+                         style="background: ${bgColor}; margin: 5px 0; padding: 10px; border-radius: 5px; border-left: 4px solid ${borderColor}; cursor: pointer; position: relative;" 
+                         data-record-id="${record.id}"
+                         onclick="handleRecordClick('${record.id}')"
+                         onmousedown="startLongPress('${record.id}')"
+                         onmouseup="endLongPress()"
+                         onmouseleave="endLongPress()"
+                         ontouchstart="startLongPress('${record.id}')"
+                         ontouchend="endLongPress()">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <div style="font-weight: bold; color: ${textColor};">${record.date} ${record.time}</div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'};">${weekdayNames[record.weekday]}</div>
+                                ${isMultiSelectMode ? `<div style="width: 20px; height: 20px; border: 2px solid #007aff; border-radius: 50%; display: flex; align-items: center; justify-content: center; ${selectionStyle}">${selectionIcon}</div>` : ''}
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'}; margin-bottom: 5px;">来自: ${record.phoneNumber}</div>
+                        <div style="font-size: 12px; color: ${textColor}; line-height: 1.4; word-break: break-all;">${shortContent}</div>
+                    </div>
+                `;
+            });
+        }
+        
+        recordsList.innerHTML = recordsHTML;
+    }
+
+    // 切换年份
+    function changeYear(year) {
+        currentYear = parseInt(year);
+        
+        // 更新标题
+        document.getElementById('pageTitle').textContent = currentYear + '年违停警报统计';
+        
+        // 重新生成年份选择器选项（保持当前选中状态）
+        // generateYearOptions(); // 不需要重新生成
+        
+        // 加载对应年份的数据
+        loadYearData(currentYear);
+        
+        // 重新生成统计
+        generateStatistics();
+        
+        console.log('已切换到' + currentYear + '年');
+    }
+
+    // 加载指定年份的数据
+    function loadYearData(year) {
+        try {
+            var savedRecords = api.getPrefs({sync: true, key: 'alertRecords_' + year});
+            if (savedRecords) {
+                alertRecords = JSON.parse(savedRecords);
+                console.log('已加载' + year + '年的' + alertRecords.length + '条警报记录');
+            } else {
+                alertRecords = [];
+                console.log('未找到' + year + '年的警报记录');
+            }
+        } catch (e) {
+            alertRecords = [];
+            console.log('加载' + year + '年警报记录失败: ' + e.message);
+        }
+    }
+
+    // 显示记录详情
+    function showRecordDetail(recordId) {
+        var record = alertRecords.find(function(r) {
+            return r.id.toString() === recordId;
+        });
+        
+        if (!record) {
+            api.toast({
+                msg: '未找到记录',
+                duration: 2000,
+                location: 'top'
+            });
+            return;
+        }
+        
+        var weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        
+        // 判断是否为测试记录：测试记录为浅灰色，正常记录为黑色，颜色区分便于阅读
+        var isTestRecord = record.content.indexOf('TEST') !== -1 || record.content.indexOf('测试') !== -1;
+        var textColor = isTestRecord ? '#999' : '#333';
+        var bgColor = isTestRecord ? '#f0f0f0' : '#f8f8f8';
+        var titleColor = isTestRecord ? '#999' : '#333';
+        var titleText = isTestRecord ? '测试警报详情' : '警报详情';
+        
+        var detailHTML = `
+        <div class="detail-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center;">
+            <div class="detail-modal" style="background: white; border-radius: 10px; padding: 20px; margin: 20px; max-width: 90%; max-height: 80%; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0; color: ${titleColor};">${titleText}</h3>
+                    <button onclick="closeRecordDetail()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">×</button>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: bold; color: ${textColor};">时间：</span>
+                        <span style="color: ${isTestRecord ? '#999' : '#666'};">${record.date} ${record.time}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: bold; color: ${textColor};">星期：</span>
+                        <span style="color: ${isTestRecord ? '#999' : '#666'};">${weekdayNames[record.weekday]}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-weight: bold; color: ${textColor};">来源号码：</span>
+                        <span style="color: ${isTestRecord ? '#999' : '#666'};">${record.phoneNumber}</span>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <div style="font-weight: bold; color: ${textColor}; margin-bottom: 8px;">短信内容：</div>
+                    <div style="background: ${bgColor}; padding: 10px; border-radius: 5px; line-height: 1.5; color: ${textColor}; white-space: pre-wrap; word-break: break-all;">${record.content}</div>
+                </div>
+                
+                <div style="text-align: center; display: flex; gap: 10px; justify-content: center;">
+                    <button onclick="deleteSingleRecord('${recordId}')" style="padding: 10px 20px; background: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer;">删除</button>
+                    <button onclick="closeRecordDetail()" style="padding: 10px 20px; background: #007aff; color: white; border: none; border-radius: 5px; cursor: pointer;">关闭</button>
+                </div>
+            </div>
+        </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', detailHTML);
+    }
+
+    // 关闭记录详情
+    function closeRecordDetail() {
+        var detailOverlay = document.querySelector('.detail-overlay');
+        if (detailOverlay) {
+            detailOverlay.remove();
+        }
+    }
+
+    // 长按开始
+    function startLongPress(recordId) {
+        longPressTimer = setTimeout(function() {
+            if (!isMultiSelectMode) {
+                enterMultiSelectMode();
+            }
+            toggleRecordSelection(recordId);
+        }, 500); // 500ms长按触发
+    }
+
+    // 长按结束
+    function endLongPress() {
+        if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+        }
+    }
+
+    // 处理记录点击
+    function handleRecordClick(recordId) {
+        if (isMultiSelectMode) {
+            toggleRecordSelection(recordId);
+        } else {
+            showRecordDetail(recordId);
+        }
+    }
+
+    // 切换多选模式
+    function toggleMultiSelect() {
+        if (isMultiSelectMode) {
+            exitMultiSelectMode();
+        } else {
+            enterMultiSelectMode();
+        }
+    }
+
+    // 进入多选模式
+    function enterMultiSelectMode() {
+        isMultiSelectMode = true;
+        selectedRecords = [];
+        document.getElementById('multiSelectBtn').textContent = '退出多选';
+        document.getElementById('multiSelectBtn').style.background = '#ff8800';
+        document.getElementById('multiSelectActions').style.display = 'block';
+        updateSelectedCount();
+        generateRecordsList(); // 重新生成列表以显示选择框
+    }
+
+    // 退出多选模式
+    function exitMultiSelectMode() {
+        isMultiSelectMode = false;
+        selectedRecords = [];
+        document.getElementById('multiSelectBtn').textContent = '多选删除';
+        document.getElementById('multiSelectBtn').style.background = '#007aff';
+        document.getElementById('multiSelectActions').style.display = 'none';
+        generateRecordsList(); // 重新生成列表以隐藏选择框
+    }
+
+    // 切换记录选择状态
+    function toggleRecordSelection(recordId) {
+        var index = selectedRecords.indexOf(recordId);
+        if (index === -1) {
+            selectedRecords.push(recordId);
+        } else {
+            selectedRecords.splice(index, 1);
+        }
+        updateSelectedCount();
+        generateRecordsList(); // 重新生成列表以更新选择状态
+    }
+
+    // 全选记录
+    function selectAllRecords() {
+        selectedRecords = alertRecords.map(function(record) {
+            return record.id.toString();
+        });
+        updateSelectedCount();
+        generateRecordsList();
+    }
+
+    // 取消全选
+    function deselectAllRecords() {
+        selectedRecords = [];
+        updateSelectedCount();
+        generateRecordsList();
+    }
+
+    // 更新选中数量显示
+    function updateSelectedCount() {
+        document.getElementById('selectedCount').textContent = selectedRecords.length;
+    }
+
+    // 删除选中的记录
+    function deleteSelectedRecords() {
+        if (selectedRecords.length === 0) {
+            api.toast({
+                msg: '请先选择要删除的记录',
+                duration: 2000,
+                location: 'top'
+            });
+            return;
+        }
+
+        api.confirm({
+            title: '确认删除',
+            msg: '确定要删除选中的 ' + selectedRecords.length + ' 条记录吗？此操作不可恢复。',
+            buttons: ['取消', '确定删除']
+        }, function(ret) {
+            if (ret.buttonIndex === 2) {
+                // 删除选中的记录
+                alertRecords = alertRecords.filter(function(record) {
+                    return selectedRecords.indexOf(record.id.toString()) === -1;
+                });
+                
+                // 保存更新后的记录
+                saveAlertRecords();
+                
+                // 退出多选模式
+                exitMultiSelectMode();
+                
+                // 重新生成统计
+                generateStatistics();
+                
+                api.toast({
+                    msg: '已删除 ' + selectedRecords.length + ' 条记录',
+                    duration: 2000,
+                    location: 'top'
+                });
+            }
+        });
+    }
+
+    // 删除单条记录
+    function deleteSingleRecord(recordId) {
+        var record = alertRecords.find(function(r) {
+            return r.id.toString() === recordId;
+        });
+        
+        if (!record) {
+            api.toast({
+                msg: '未找到记录',
+                duration: 2000,
+                location: 'top'
+            });
+            return;
+        }
+
+        api.confirm({
+            title: '确认删除',
+            msg: '确定要删除这条记录吗？此操作不可恢复。',
+            buttons: ['取消', '确定删除']
+        }, function(ret) {
+            if (ret.buttonIndex === 2) {
+                // 删除记录
+                alertRecords = alertRecords.filter(function(r) {
+                    return r.id.toString() !== recordId;
+                });
+                
+                // 保存更新后的记录
+                saveAlertRecords();
+                
+                // 关闭详情弹窗
+                closeRecordDetail();
+                
+                // 重新生成统计
+                generateStatistics();
+                
+                api.toast({
+                    msg: '记录已删除',
+                    duration: 2000,
+                    location: 'top'
+                });
+            }
+        });
+    }
+
+    // 导出统计数据
+    function exportStatistics() {
+        if (alertRecords.length === 0) {
+            api.toast({
+                msg: '暂无数据可导出',
+                duration: 2000,
+                location: 'top'
+            });
+            return;
+        }
+        
+        try {
+            var exportData = {
+                year: currentYear,
+                totalAlerts: alertRecords.length,
+                records: alertRecords,
+                exportTime: new Date().toISOString()
+            };
+            
+            var dataStr = JSON.stringify(exportData, null, 2);
+            var fileName = `违停警报统计_${currentYear}年_${new Date().toISOString().split('T')[0]}.json`;
+            
+            // 这里可以调用文件保存API            
+            api.writeFile({
+                path: "fs://export/" + fileName,
+                data: dataStr
+            }, function(ret, err) {
+                if (ret && ret.status) {
+                    console.log('数据已写入文件：' + fileName );
+                    api.toast({
+                        msg: '数据已写入文件：' + fileName,
+                        duration: 2000,
+                        location: 'top'
+                    });
+                } else {
+                    console.log('写入文件失败: ' + JSON.stringify(err));
+                }
+            });
+            
+            console.log('统计数据导出成功: ' + fileName);
+        } catch (e) {
+            console.log('数据导出失败: ' + e.message);
+            api.toast({
+                msg: '数据导出失败: ' + e.message,
+                duration: 2000,
+                location: 'top'
+            });
+        }
+    }
+
+    // 清空统计记录
+    function clearStatistics() {
+        api.confirm({
+            title: '确认清空',
+            msg: '确定要清空' + currentYear + '年的所有警报记录吗？此操作不可恢复。',
+            buttons: ['取消', '确定清空']
+        }, function(ret) {
+            if (ret.buttonIndex === 2) {
+                alertRecords = [];
+                saveAlertRecords();
+                console.log('已清空' + currentYear + '年的所有警报记录');
+                
+                // 刷新统计页面
+                generateStatistics();
+                
+                api.toast({
+                    msg: currentYear + '年记录已清空',
+                    duration: 2000,
+                    location: 'top'
+                });
+            }
+        });
+    }
+
+    // 保存警报记录到本地存储
+    function saveAlertRecords() {
+        try {
+            api.setPrefs({
+                key: 'alertRecords_' + currentYear,
+                value: JSON.stringify(alertRecords)
+            });
+        } catch (e) {
+            console.log('保存警报记录失败: ' + e.message);
+        }
+    }
+
+    // 分享统计结果
+    function shareStatistics() {
+        if (alertRecords.length === 0) {
+            api.toast({
+                msg: '暂无数据可分享',
+                duration: 2000,
+                location: 'top'
+            });
+            return;
+        }
+        
+        try {
+            // 生成分享文本
+            var shareText = generateShareText();
+            console.log('分享文本：' + shareText);
+            
+            // 调用系统分享功能
+            var shareAction = api.require('shareAction');
+            shareAction.shareText({
+                text: shareText
+            });
+        } catch (e) {
+            console.log('分享功能异常: ' + e.message);
+            api.toast({
+                msg: '分享功能异常',
+                duration: 2000,
+                location: 'top'
+            });
+        }
+    }
+
+    // 生成分享文本
+    function generateShareText() {
+        var totalAlerts = alertRecords.length;
+        var avgPerMonth = totalAlerts > 0 ? (totalAlerts / 12).toFixed(1) : 0;
+        
+        // 计算最高月次数
+        var monthlyData = new Array(12).fill(0);
+        alertRecords.forEach(function(record) {
+            if (record.year === currentYear) {
+                if (record.month >= 1 && record.month <= 12) {
+                    monthlyData[record.month - 1]++;
+                }
+            }
+        });
+        var maxMonth = Math.max(...monthlyData);
+        
+        // 计算最近警报时间
+        var lastAlert = '无';
+        if (alertRecords.length > 0) {
+            var sortedRecords = alertRecords.slice().sort(function(a, b) {
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            var lastRecord = sortedRecords[0];
+            var lastDate = new Date(lastRecord.timestamp);
+            var now = new Date();
+            var diffDays = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0) {
+                lastAlert = '今天';
+            } else if (diffDays === 1) {
+                lastAlert = '昨天';
+            } else if (diffDays < 7) {
+                lastAlert = diffDays + '天前';
+            } else {
+                lastAlert = lastRecord.date;
+            }
+        }
+        
+        var shareText = `🚨 ${currentYear}年违停警报统计报告
+        
+📊 统计概览：
+• 总警报次数：${totalAlerts}次
+• 月平均次数：${avgPerMonth}次
+• 最高月次数：${maxMonth}次
+• 最近警报：${lastAlert}
+
+📈 使用交警短信提醒APP，及时掌握违章信息，避免逾期处理！
+
+#交警短信提醒 #违章统计 #安全驾驶`;
+        
+        return shareText;
+    }
+</script>
+
+</body>
+</html> 
