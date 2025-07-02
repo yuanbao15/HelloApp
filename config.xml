@@ -17,11 +17,11 @@
 	<preference name="hScrollBarEnabled" value="false"/>
 	<preference name="vScrollBarEnabled" value="false"/>
 	<preference name="autoLaunch" value="true"/>
-	<preference name="fullScreen" value="false"/>
+	<preference name="fullScreen" value="true"/> <!-- 是否全屏显示 -->
+	<preference name="statusBarAppearance" value="true"/> <!-- 是否显示状态栏 -->
 	<preference name="autoUpdate" value="true" />
 	<preference name="smartUpdate" value="false" />
 	<preference name="debug" value="true"/>
-	<preference name="statusBarAppearance" value="true"/>
 	
 	<permission name="readPhoneState" />
 	<permission name="camera" />

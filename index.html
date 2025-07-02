@@ -58,6 +58,18 @@
         //输出Log，Log将显示在APICloud Studio控制台
         console.log("Hello World! Hello APICloud!");
 
+
+        // 设置全屏模式为false，确保状态栏可见【重要】
+        api.setFullScreen({
+            fullScreen: false
+        });
+        // 配置状态栏显示
+        api.setStatusBarStyle({
+            style: 'light',
+            // color: '#000000' // 默认与顶部颜色一致
+        });
+
+
         var header = $api.dom('header'); // 获取 header 标签元素
         var footer = $api.dom('footer'); // 获取 footer 标签元素
 
