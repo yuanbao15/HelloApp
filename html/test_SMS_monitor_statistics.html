@@ -115,6 +115,84 @@
             box-shadow: 0 0 10px rgba(0, 122, 255, 0.5);
             border: 2px solid #007aff;
         }
+        
+        /* 滑动删除样式 */
+        .records-item-container {
+            position: relative;
+            overflow: hidden;
+            margin: 5px 0;
+            border-radius: 5px;
+        }
+        
+        .records-item {
+            position: relative;
+            z-index: 2;
+            transition: transform 0.3s ease;
+            background: #f8f8f8;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #ff4444;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        .records-item.swiped {
+            transform: translateX(-80px);
+        }
+        
+        .delete-button {
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 80px;
+            height: 100%;
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            z-index: 1;
+            border-radius: 0 5px 5px 0;
+            box-shadow: inset 2px 0 5px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        .delete-button:hover {
+            background: linear-gradient(135deg, #cc0000, #990000);
+        }
+        
+        .delete-button:active {
+            transform: scale(0.95);
+        }
+        
+        /* 滑动提示 */
+        .swipe-hint {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 3;
+        }
+        
+        .records-item-container:hover .swipe-hint {
+            opacity: 1;
+        }
+        
+        /* 滑动时的视觉反馈 */
+        .records-item.swiping {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body>
@@ -249,7 +327,7 @@
         </div>
         
         <div class="stats-list">
-            <h3 style="color: #333;">详细记录</h3>
+            <h3 style="color: #333;">详细记录 <span style="font-size: 12px; color: #666; font-weight: normal;">(左滑删除 | 长按多选)</span></h3>
             <div id="recordsList" style="max-height: 500px; overflow-y: auto;">
                 <!-- 详细记录将在这里生成 -->
             </div>
@@ -269,6 +347,8 @@
     var hasMoved = false; // 是否发生了移动
     var moveThreshold = 10; // 移动阈值（像素）
     var longPressThreshold = 800; // 长按阈值（毫秒）
+    var isSwipeInProgress = false; // 跟踪滑动状态
+    var justEnteredMultiSelectByLongPress = false;
 
     apiready = function() {
         // 获取页面参数
@@ -299,8 +379,7 @@
             goBack();
         });
         
-        // 添加触摸事件监听
-        addTouchEventListeners();
+
     };
 
     // 返回上一页
@@ -308,36 +387,7 @@
         api.closeWin();
     }
 
-    // 添加触摸事件监听
-    function addTouchEventListeners() {
-        // 使用事件委托，监听整个记录列表容器
-        var recordsContainer = document.getElementById('recordsList');
-        if (recordsContainer) {
-            recordsContainer.addEventListener('touchstart', function(event) {
-                var recordItem = event.target.closest('.records-item');
-                if (recordItem) {
-                    var recordId = recordItem.getAttribute('data-record-id');
-                    if (recordId) {
-                        handleTouchStart(event, recordId);
-                    }
-                }
-            }, { passive: true });
-            
-            recordsContainer.addEventListener('touchmove', function(event) {
-                handleTouchMove(event);
-            }, { passive: true });
-            
-            recordsContainer.addEventListener('touchend', function(event) {
-                var recordItem = event.target.closest('.records-item');
-                if (recordItem) {
-                    var recordId = recordItem.getAttribute('data-record-id');
-                    if (recordId) {
-                        handleTouchEnd(event, recordId);
-                    }
-                }
-            }, { passive: true });
-        }
-    }
+
 
     // 动态生成年份选择器选项
     function generateYearOptions() {
@@ -966,31 +1016,76 @@
                 var selectionStyle = isSelected ? 'background: #007aff; color: white;' : '';
                 var selectionIcon = isSelected ? '✓' : '';
                 
-                // 允许通过长按触发多选删除
+                // 允许通过长按触发多选删除，同时支持滑动删除
                 recordsHTML += `
-                    <div class="records-item" 
-                         style="background: ${bgColor}; margin: 5px 0; padding: 10px; border-radius: 5px; border-left: 4px solid ${borderColor}; cursor: pointer; position: relative;" 
-                         data-record-id="${record.id}"
-                         onclick="handleRecordClick('${record.id}')"
-                         onmousedown="handleMouseDown(event, '${record.id}')"
-                         onmousemove="handleMouseMove(event)"
-                         onmouseup="handleMouseUp(event, '${record.id}')"
-                         onmouseleave="handleMouseLeave()">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                            <div style="font-weight: bold; color: ${textColor};">${record.date} ${record.time}</div>
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'};">${weekdayNames[record.weekday]}</div>
-                                ${isMultiSelectMode ? `<div style="width: 20px; height: 20px; border: 2px solid #007aff; border-radius: 50%; display: flex; align-items: center; justify-content: center; ${selectionStyle}">${selectionIcon}</div>` : ''}
+                    <div class="records-item-container">
+                        <div class="records-item${isSelected ? ' selected' : ''}" 
+                             style="background: ${bgColor}; border-left: 4px solid ${borderColor};" 
+                             data-record-id="${record.id}"
+                             data-touch-start-x="0"
+                             data-touch-start-y="0"
+                             data-touch-current-x="0"
+                             data-touch-current-y="0"
+                             data-is-touching="false"
+                             data-swipe-threshold="50"
+                             onclick="handleRecordClick('${record.id}')"
+                             onmousedown="handleMouseDown(event, '${record.id}')"
+                             onmousemove="handleMouseMove(event)"
+                             onmouseup="handleMouseUp(event, '${record.id}')"
+                             onmouseleave="handleMouseLeave()">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                <div style="font-weight: bold; color: ${textColor};">${record.date} ${record.time}</div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'};">${weekdayNames[record.weekday]}</div>
+                                    ${isMultiSelectMode ? `<div class="selection-box" 
+                                        style="width: 24px; height: 24px; border: 2px solid #007aff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; margin-left: 10px; z-index: 1000; position: relative; cursor: pointer; ${selectionStyle}" 
+                                        onclick="event.stopPropagation(); toggleRecordSelection('${record.id}');"
+                                        onmousedown="event.stopPropagation();"
+                                        onmouseup="event.stopPropagation();">${selectionIcon}</div>` : ''}
+                                </div>
                             </div>
+                            <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'}; margin-bottom: 5px;">来自: ${record.phoneNumber}</div>
+                            <div style="font-size: 12px; color: ${textColor}; line-height: 1.4; word-break: break-all;">${shortContent}</div>
                         </div>
-                        <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'}; margin-bottom: 5px;">来自: ${record.phoneNumber}</div>
-                        <div style="font-size: 12px; color: ${textColor}; line-height: 1.4; word-break: break-all;">${shortContent}</div>
+                        <div class="delete-button" onclick="deleteSingleRecord('${record.id}')">
+                            删除
+                        </div>
+                        ${!isMultiSelectMode ? '<div class="swipe-hint">← 左滑删除</div>' : ''}
                     </div>
                 `;
             });
         }
         
         recordsList.innerHTML = recordsHTML;
+        
+        // 绑定触摸事件监听器
+        bindTouchEvents();
+    }
+
+    // 绑定触摸和鼠标事件监听器
+    function bindTouchEvents() {
+        var recordItems = document.querySelectorAll('.records-item');
+        recordItems.forEach(function(item) {
+            // 移除之前的事件监听器
+            item.removeEventListener('touchstart', handleTouchStart);
+            item.removeEventListener('touchmove', handleTouchMove);
+            item.removeEventListener('touchend', handleTouchEnd);
+            item.removeEventListener('mousedown', handleMouseDownForSwipe);
+            item.removeEventListener('mousemove', handleMouseMoveForSwipe);
+            item.removeEventListener('mouseup', handleMouseUpForSwipe);
+            item.removeEventListener('mouseleave', handleMouseLeaveForSwipe);
+            
+            // 添加触摸事件监听器，使用更安全的方式
+            item.addEventListener('touchstart', handleTouchStart, { passive: true });
+            item.addEventListener('touchmove', handleTouchMove, { passive: true });
+            item.addEventListener('touchend', handleTouchEnd, { passive: true });
+            
+            // 添加鼠标事件监听器（用于桌面端）
+            item.addEventListener('mousedown', handleMouseDownForSwipe, { passive: true });
+            item.addEventListener('mousemove', handleMouseMoveForSwipe, { passive: true });
+            item.addEventListener('mouseup', handleMouseUpForSwipe, { passive: true });
+            item.addEventListener('mouseleave', handleMouseLeaveForSwipe, { passive: true });
+        });
     }
 
     // 切换年份
@@ -1103,72 +1198,36 @@
 
 
     // 触摸开始处理
-    function handleTouchStart(event, recordId) {
+    function handleTouchStart(event) {
+        var recordItem = event.currentTarget;
+        var recordId = recordItem.getAttribute('data-record-id');
         var touch = event.touches[0];
+        
+        // 记录触摸开始位置
+        recordItem.setAttribute('data-touch-start-x', touch.clientX);
+        recordItem.setAttribute('data-touch-start-y', touch.clientY);
+        recordItem.setAttribute('data-touch-current-x', touch.clientX);
+        recordItem.setAttribute('data-touch-current-y', touch.clientY);
+        recordItem.setAttribute('data-is-touching', 'true');
+        
         touchStartY = touch.clientY;
         touchStartTime = Date.now();
         hasMoved = false;
         
         // 添加长按视觉反馈
-        var element = event.target.closest('.records-item');
-        if (element) {
-            element.classList.add('long-pressing');
+        if (recordItem) {
+            recordItem.classList.add('long-pressing');
         }
         
         // 开始长按计时器
         longPressTimer = setTimeout(function() {
-            if (!hasMoved && !isMultiSelectMode) {
-                enterMultiSelectMode();
-                toggleRecordSelection(recordId);
+            if (!hasMoved && !isMultiSelectMode && !isSwipeInProgress) {
+                enterMultiSelectMode(recordId);
             }
         }, longPressThreshold);
     }
 
-    // 触摸移动处理
-    function handleTouchMove(event) {
-        if (longPressTimer) {
-            var touch = event.touches[0];
-            var moveDistance = Math.abs(touch.clientY - touchStartY);
-            
-            if (moveDistance > moveThreshold) {
-                hasMoved = true;
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-                
-                // 移除长按视觉反馈
-                var element = document.querySelector('.records-item.long-pressing');
-                if (element) {
-                    element.classList.remove('long-pressing');
-                }
-            }
-        }
-    }
 
-    // 触摸结束处理
-    function handleTouchEnd(event, recordId) {
-        var touchDuration = Date.now() - touchStartTime;
-        
-        // 移除长按视觉反馈
-        var element = event.target.closest('.records-item');
-        if (element) {
-            element.classList.remove('long-pressing');
-        }
-        
-        if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
-        
-        // 如果没有移动且时间足够短，则认为是点击
-        if (!hasMoved && touchDuration < longPressThreshold) {
-            handleRecordClick(recordId);
-        }
-        
-        // 重置状态
-        hasMoved = false;
-        touchStartY = 0;
-        touchStartTime = 0;
-    }
 
     // 鼠标按下处理（也处理触摸事件）
     function handleMouseDown(event, recordId) {
@@ -1187,9 +1246,8 @@
         
         // 开始长按计时器
         longPressTimer = setTimeout(function() {
-            if (!hasMoved && !isMultiSelectMode) {
-                enterMultiSelectMode();
-                toggleRecordSelection(recordId);
+            if (!hasMoved && !isMultiSelectMode && !isSwipeInProgress) {
+                enterMultiSelectMode(recordId);
             }
         }, longPressThreshold);
     }
@@ -1230,6 +1288,12 @@
             longPressTimer = null;
         }
         
+        // 新增：如果刚刚长按进入多选，则本次不处理点击
+        if (justEnteredMultiSelectByLongPress) {
+            justEnteredMultiSelectByLongPress = false;
+            return;
+        }
+        
         // 如果没有移动且时间足够短，则认为是点击
         if (!hasMoved && touchDuration < longPressThreshold) {
             handleRecordClick(recordId);
@@ -1260,12 +1324,18 @@
 
     // 处理记录点击
     function handleRecordClick(recordId) {
-        // 防止在触摸事件处理中重复触发
-        if (hasMoved) {
-            return;
+        // 检查是否在滑动状态
+        if (isSwipeInProgress) {
+            return; // 如果正在滑动，不触发点击事件
+        }
+        
+        var recordItem = document.querySelector(`[data-record-id="${recordId}"]`);
+        if (recordItem && recordItem.classList.contains('swiped')) {
+            return; // 如果已滑动显示删除按钮，不触发点击事件
         }
         
         if (isMultiSelectMode) {
+            // 在多选模式下，点击整行记录都可以切换选择状态
             toggleRecordSelection(recordId);
         } else {
             showRecordDetail(recordId);
@@ -1282,13 +1352,24 @@
     }
 
     // 进入多选模式
-    function enterMultiSelectMode() {
+    function enterMultiSelectMode(preSelectRecordId) {
         isMultiSelectMode = true;
         selectedRecords = [];
+        
+        // 如果指定了要预先选中的记录，则添加到选中列表
+        if (preSelectRecordId) {
+            selectedRecords.push(preSelectRecordId);
+            justEnteredMultiSelectByLongPress = true;
+        }
+        
         document.getElementById('multiSelectBtn').textContent = '退出多选';
         document.getElementById('multiSelectBtn').style.background = '#ff8800';
         document.getElementById('multiSelectActions').style.display = 'block';
         updateSelectedCount();
+        
+        // 重置所有滑动状态
+        resetAllSwipeStates();
+        
         generateRecordsList(); // 重新生成列表以显示选择框
     }
 
@@ -1299,6 +1380,10 @@
         document.getElementById('multiSelectBtn').textContent = '多选删除';
         document.getElementById('multiSelectBtn').style.background = '#007aff';
         document.getElementById('multiSelectActions').style.display = 'none';
+        
+        // 重置所有滑动状态
+        resetAllSwipeStates();
+        
         generateRecordsList(); // 重新生成列表以隐藏选择框
     }
 
@@ -1310,8 +1395,42 @@
         } else {
             selectedRecords.splice(index, 1);
         }
+        
         updateSelectedCount();
-        generateRecordsList(); // 重新生成列表以更新选择状态
+        
+        // 更新当前项的样式和选择框
+        var recordItem = document.querySelector(`[data-record-id="${recordId}"]`);
+        if (recordItem) {
+            // 更新记录项的选中状态
+            if (selectedRecords.indexOf(recordId) !== -1) {
+                recordItem.classList.add('selected');
+            } else {
+                recordItem.classList.remove('selected');
+            }
+            
+            // 更新选择框的样式
+            var selectionBox = recordItem.querySelector('.selection-box');
+            if (selectionBox) {
+                var isSelected = selectedRecords.indexOf(recordId) !== -1;
+                if (isSelected) {
+                    selectionBox.style.background = '#007aff';
+                    selectionBox.style.color = 'white';
+                    selectionBox.style.fontWeight = 'bold';
+                    selectionBox.style.fontSize = '14px';
+                    selectionBox.style.borderColor = '#0056cc';
+                    selectionBox.style.boxShadow = '0 2px 4px rgba(0,122,255,0.3)';
+                    selectionBox.textContent = '✓';
+                } else {
+                    selectionBox.style.background = '#f0f0f0';
+                    selectionBox.style.color = '#999';
+                    selectionBox.style.fontWeight = 'normal';
+                    selectionBox.style.fontSize = '12px';
+                    selectionBox.style.borderColor = '#007aff';
+                    selectionBox.style.boxShadow = 'none';
+                    selectionBox.textContent = '';
+                }
+            }
+        }
     }
 
     // 全选记录
@@ -1375,49 +1494,7 @@
         });
     }
 
-    // 删除单条记录
-    function deleteSingleRecord(recordId) {
-        var record = alertRecords.find(function(r) {
-            return r.id.toString() === recordId;
-        });
-        
-        if (!record) {
-            api.toast({
-                msg: '未找到记录',
-                duration: 2000,
-                location: 'top'
-            });
-            return;
-        }
 
-        api.confirm({
-            title: '确认删除',
-            msg: '确定要删除这条记录吗？此操作不可恢复。',
-            buttons: ['取消', '确定删除']
-        }, function(ret) {
-            if (ret.buttonIndex === 2) {
-                // 删除记录
-                alertRecords = alertRecords.filter(function(r) {
-                    return r.id.toString() !== recordId;
-                });
-                
-                // 保存更新后的记录
-                saveAlertRecords();
-                
-                // 关闭详情弹窗
-                closeRecordDetail();
-                
-                // 重新生成统计
-                generateStatistics();
-                
-                api.toast({
-                    msg: '记录已删除',
-                    duration: 2000,
-                    location: 'top'
-                });
-            }
-        });
-    }
 
     // 导出统计数据
     function exportStatistics() {
@@ -1722,6 +1799,353 @@
     document.addEventListener('click', function(event) {
         if (!event.target.classList.contains('chart-bar')) {
             hideChartTooltip();
+        }
+    });
+
+    // 触摸事件处理 - 滑动删除功能
+    function handleTouchStart(event) {
+        if (isMultiSelectMode) return; // 多选模式下禁用滑动删除
+        
+        var touch = event.touches[0];
+        var recordItem = event.currentTarget;
+        var recordId = recordItem.getAttribute('data-record-id');
+        
+        recordItem.setAttribute('data-touch-start-x', touch.clientX);
+        recordItem.setAttribute('data-touch-start-y', touch.clientY);
+        recordItem.setAttribute('data-touch-current-x', touch.clientX);
+        recordItem.setAttribute('data-touch-current-y', touch.clientY);
+        recordItem.setAttribute('data-is-touching', 'true');
+        
+        isSwipeInProgress = false; // 重置滑动状态
+        
+        // 同时触发长按逻辑
+        handleMouseDown(event, recordId);
+        
+        // 只有在非多选模式下才阻止默认滚动
+        if (!isMultiSelectMode && event.cancelable) {
+            event.preventDefault();
+        }
+    }
+
+    function handleTouchMove(event) {
+        var touch = event.touches[0];
+        var recordItem = event.currentTarget;
+        
+        if (recordItem.getAttribute('data-is-touching') !== 'true') return;
+        
+        // 更新当前触摸位置
+        recordItem.setAttribute('data-touch-current-x', touch.clientX);
+        recordItem.setAttribute('data-touch-current-y', touch.clientY);
+        
+        if (isMultiSelectMode) {
+            // 多选模式下只记录位置，不处理滑动
+            return;
+        }
+        
+        // 非多选模式下的滑动删除逻辑
+        var startX = parseInt(recordItem.getAttribute('data-touch-start-x'));
+        var currentX = parseInt(recordItem.getAttribute('data-touch-current-x'));
+        var startY = parseInt(recordItem.getAttribute('data-touch-start-y'));
+        var currentY = parseInt(recordItem.getAttribute('data-touch-current-y'));
+        
+        var deltaX = currentX - startX;
+        var deltaY = Math.abs(currentY - startY);
+        
+        // 同时触发长按移动逻辑
+        handleMouseMove(event);
+        
+        // 只处理水平滑动，垂直滑动距离不能太大
+        if (deltaY < 50 && deltaX < 0) {
+            var swipeDistance = Math.min(Math.abs(deltaX), 80);
+            recordItem.style.transform = `translateX(-${swipeDistance}px)`;
+            recordItem.classList.add('swiping');
+            isSwipeInProgress = true; // 标记正在滑动
+        }
+        
+        // 只有在非多选模式下才阻止默认滚动
+        if (!isMultiSelectMode && event.cancelable) {
+            event.preventDefault();
+        }
+    }
+
+    function handleTouchEnd(event) {
+        var recordItem = event.currentTarget;
+        var recordId = recordItem.getAttribute('data-record-id');
+        
+        // 新增：如果刚刚长按进入多选，则本次不处理点击
+        if (justEnteredMultiSelectByLongPress) {
+            justEnteredMultiSelectByLongPress = false;
+            return;
+        }
+        
+        if (isMultiSelectMode) {
+            // 多选模式下，直接处理点击事件
+            if (recordItem.getAttribute('data-is-touching') === 'true') {
+                var startX = parseInt(recordItem.getAttribute('data-touch-start-x'));
+                var currentX = parseInt(recordItem.getAttribute('data-touch-current-x'));
+                var startY = parseInt(recordItem.getAttribute('data-touch-start-y'));
+                var currentY = parseInt(recordItem.getAttribute('data-touch-current-y'));
+                
+                var deltaX = Math.abs(currentX - startX);
+                var deltaY = Math.abs(currentY - startY);
+                
+                // 如果移动距离很小，认为是点击
+                if (deltaX < 10 && deltaY < 10) {
+                    handleRecordClick(recordId);
+                }
+            }
+            return;
+        }
+        
+        // 非多选模式下的滑动删除逻辑
+        if (recordItem.getAttribute('data-is-touching') !== 'true') return;
+        
+        var startX = parseInt(recordItem.getAttribute('data-touch-start-x'));
+        var currentX = parseInt(recordItem.getAttribute('data-touch-current-x'));
+        var swipeThreshold = parseInt(recordItem.getAttribute('data-swipe-threshold'));
+        
+        var deltaX = currentX - startX;
+        
+        // 移除滑动状态
+        recordItem.classList.remove('swiping');
+        
+        // 如果滑动距离超过阈值，显示删除按钮
+        if (deltaX < -swipeThreshold) {
+            // 先重置其他项的滑动状态，确保只有当前项显示删除按钮
+            resetOtherSwipeStates(recordId);
+            recordItem.classList.add('swiped');
+        } else {
+            recordItem.classList.remove('swiped');
+            recordItem.style.transform = '';
+        }
+        
+        recordItem.setAttribute('data-is-touching', 'false');
+        isSwipeInProgress = false; // 重置滑动状态
+        
+        // 同时触发长按结束逻辑
+        handleMouseUp(event, recordId);
+    }
+
+    // 鼠标事件处理 - 滑动删除功能（桌面端支持）
+    function handleMouseDownForSwipe(event) {
+        var recordItem = event.currentTarget;
+        var recordId = recordItem.getAttribute('data-record-id');
+        
+        // 记录鼠标开始位置
+        recordItem.setAttribute('data-mouse-start-x', event.clientX);
+        recordItem.setAttribute('data-mouse-start-y', event.clientY);
+        recordItem.setAttribute('data-mouse-current-x', event.clientX);
+        recordItem.setAttribute('data-mouse-current-y', event.clientY);
+        recordItem.setAttribute('data-is-mousing', 'true');
+        
+        // 同时触发长按逻辑
+        handleMouseDown(event, recordId);
+        
+        // 只有在非多选模式下才阻止默认行为
+        if (!isMultiSelectMode && event.cancelable) {
+            event.preventDefault();
+        }
+    }
+
+    function handleMouseMoveForSwipe(event) {
+        var recordItem = event.currentTarget;
+        
+        if (recordItem.getAttribute('data-is-mousing') !== 'true') return;
+        
+        // 更新当前鼠标位置
+        recordItem.setAttribute('data-mouse-current-x', event.clientX);
+        recordItem.setAttribute('data-mouse-current-y', event.clientY);
+        
+        if (isMultiSelectMode) {
+            // 多选模式下只记录位置，不处理滑动
+            return;
+        }
+        
+        // 非多选模式下的滑动删除逻辑
+        var startX = parseInt(recordItem.getAttribute('data-mouse-start-x'));
+        var currentX = parseInt(recordItem.getAttribute('data-mouse-current-x'));
+        var startY = parseInt(recordItem.getAttribute('data-mouse-start-y'));
+        var currentY = parseInt(recordItem.getAttribute('data-mouse-current-y'));
+        
+        var deltaX = currentX - startX;
+        var deltaY = Math.abs(currentY - startY);
+        
+        // 同时触发长按移动逻辑
+        handleMouseMove(event);
+        
+        // 只处理水平滑动，垂直滑动距离不能太大
+        if (deltaY < 50 && deltaX < 0) {
+            var swipeDistance = Math.min(Math.abs(deltaX), 80);
+            recordItem.style.transform = `translateX(-${swipeDistance}px)`;
+            recordItem.classList.add('swiping');
+            isSwipeInProgress = true; // 标记正在滑动
+        }
+        
+        // 只有在非多选模式下才阻止默认行为
+        if (!isMultiSelectMode && event.cancelable) {
+            event.preventDefault();
+        }
+    }
+
+    function handleMouseUpForSwipe(event) {
+        var recordItem = event.currentTarget;
+        var recordId = recordItem.getAttribute('data-record-id');
+        
+        if (isMultiSelectMode) {
+            // 多选模式下，直接处理点击事件
+            if (recordItem.getAttribute('data-is-mousing') === 'true') {
+                var startX = parseInt(recordItem.getAttribute('data-mouse-start-x'));
+                var currentX = parseInt(recordItem.getAttribute('data-mouse-current-x'));
+                var startY = parseInt(recordItem.getAttribute('data-mouse-start-y'));
+                var currentY = parseInt(recordItem.getAttribute('data-mouse-current-y'));
+                
+                var deltaX = Math.abs(currentX - startX);
+                var deltaY = Math.abs(currentY - startY);
+                
+                // 如果移动距离很小，认为是点击
+                if (deltaX < 10 && deltaY < 10) {
+                    handleRecordClick(recordId);
+                }
+            }
+            return;
+        }
+        
+        // 非多选模式下的滑动删除逻辑
+        if (recordItem.getAttribute('data-is-mousing') !== 'true') return;
+        
+        var startX = parseInt(recordItem.getAttribute('data-mouse-start-x'));
+        var currentX = parseInt(recordItem.getAttribute('data-mouse-current-x'));
+        var swipeThreshold = parseInt(recordItem.getAttribute('data-swipe-threshold'));
+        
+        var deltaX = currentX - startX;
+        
+        // 移除滑动状态
+        recordItem.classList.remove('swiping');
+        
+        // 如果滑动距离超过阈值，显示删除按钮
+        if (deltaX < -swipeThreshold) {
+            // 先重置其他项的滑动状态，确保只有当前项显示删除按钮
+            resetOtherSwipeStates(recordId);
+            recordItem.classList.add('swiped');
+        } else {
+            recordItem.classList.remove('swiped');
+            recordItem.style.transform = '';
+        }
+        
+        recordItem.setAttribute('data-is-mousing', 'false');
+        isSwipeInProgress = false; // 重置滑动状态
+        
+        // 同时触发长按结束逻辑
+        handleMouseUp(event, recordId);
+    }
+
+    function handleMouseLeaveForSwipe(event) {
+        if (isMultiSelectMode) return; // 多选模式下禁用滑动删除
+        
+        var recordItem = event.currentTarget;
+        
+        if (recordItem.getAttribute('data-is-mousing') === 'true') {
+            recordItem.classList.remove('swiping');
+            recordItem.classList.remove('swiped');
+            recordItem.style.transform = '';
+            recordItem.setAttribute('data-is-mousing', 'false');
+            isSwipeInProgress = false; // 重置滑动状态
+        }
+    }
+
+    // 删除单条记录
+    function deleteSingleRecord(recordId) {
+        var record = alertRecords.find(function(r) {
+            return r.id.toString() === recordId;
+        });
+        
+        if (!record) {
+            api.toast({
+                msg: '未找到记录',
+                duration: 2000,
+                location: 'top'
+            });
+            return;
+        }
+        
+        // 显示确认弹窗
+        var confirmMsg = '确定要删除这条警报记录吗？\n\n';
+        confirmMsg += '📅 时间：' + record.date + ' ' + record.time + '\n';
+        confirmMsg += '📱 来源：' + record.phoneNumber + '\n';
+        confirmMsg += '📝 内容：' + (record.content.length > 40 ? record.content.substring(0, 40) + '...' : record.content);
+        
+        api.confirm({
+            title: '确认删除',
+            msg: confirmMsg,
+            buttons: ['取消', '确定删除']
+        }, function(ret) {
+            if (ret.buttonIndex === 2) {
+                // 从数组中移除记录
+                var index = alertRecords.findIndex(function(r) {
+                    return r.id.toString() === recordId;
+                });
+                
+                if (index !== -1) {
+                    alertRecords.splice(index, 1);
+                    
+                    // 保存到本地存储
+                    saveAlertRecords();
+                    
+                    // 清除缓存
+                    clearCache();
+                    
+                    // 重新生成统计和列表
+                    generateStatistics();
+                    
+                    // 隐藏删除按钮
+                    var recordItem = document.querySelector(`[data-record-id="${recordId}"]`);
+                    if (recordItem) {
+                        recordItem.classList.remove('swiped');
+                        recordItem.style.transform = '';
+                    }
+                    
+                    api.toast({
+                        msg: '记录已删除',
+                        duration: 2000,
+                        location: 'top'
+                    });
+                    
+                    console.log('已删除记录：' + recordId);
+                }
+            }
+        });
+    }
+
+    // 重置所有滑动状态
+    function resetAllSwipeStates() {
+        document.querySelectorAll('.records-item.swiped').forEach(function(item) {
+            item.classList.remove('swiped');
+            item.style.transform = '';
+        });
+        
+        document.querySelectorAll('.records-item.swiping').forEach(function(item) {
+            item.classList.remove('swiping');
+            item.style.transform = '';
+        });
+    }
+
+    // 重置除指定项外的所有滑动状态
+    function resetOtherSwipeStates(exceptRecordId) {
+        var allRecordItems = document.querySelectorAll('.records-item');
+        allRecordItems.forEach(function(item) {
+            var itemRecordId = item.getAttribute('data-record-id');
+            if (itemRecordId !== exceptRecordId) {
+                item.classList.remove('swiped');
+                item.classList.remove('swiping');
+                item.style.transform = '';
+            }
+        });
+    }
+
+    // 页面点击时重置滑动状态
+    document.addEventListener('click', function(event) {
+        if (!event.target.closest('.records-item-container') && !event.target.closest('.delete-button')) {
+            resetAllSwipeStates();
         }
     });
 </script>
