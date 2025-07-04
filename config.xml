@@ -8,6 +8,7 @@
     </author>
     <content src="index.html" />
 	<!-- index.html 页面中openFrame看目标页面 -->
+	<!-- html/test_SMS_monitor.html、html/test_SMS_main_frame.html 直接打开短信监听页 -->
 
     <access origin="*" />
     <preference name="pageBounce" value="false"/>

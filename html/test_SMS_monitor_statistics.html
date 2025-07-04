@@ -193,13 +193,24 @@
         .records-item.swiping {
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+        
+        /* 适配框架页面 */
+        .stats-container {
+            padding-bottom: 20px; /* 减少底部间距 */
+        }
+
     </style>
 </head>
 <body>
+<!-- 下拉刷新指示器 -->
+<div id="pullRefreshIndicator" style="position: fixed; top: -50px; left: 0; right: 0; height: 50px; background: #f8f9fa; color: #666; display: flex; align-items: center; justify-content: center; font-size: 14px; z-index: 1000; transition: top 0.3s ease; border-bottom: 1px solid #e9ecef;">
+    <span id="pullRefreshText">下拉刷新</span>
+</div>
+
 <!-- 图表悬浮提示框 -->
 <div id="chartTooltip" class="chart-tooltip"></div>
 
-<div class="stats-container">
+<div class="stats-container" id="statsContainer">
     <div class="stats-header">
         <h2 style="margin: 0;" id="pageTitle">年度违停警报统计</h2>
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -328,11 +339,11 @@
         
         <div class="stats-list">
             <h3 style="color: #333;">详细记录 <span style="font-size: 12px; color: #666; font-weight: normal;">(左滑删除 | 长按多选)</span></h3>
-            <div id="recordsList" style="max-height: 500px; overflow-y: auto;">
-                <!-- 详细记录将在这里生成 -->
-            </div>
-        </div>
-    </div>
+                         <div id="recordsList" style="max-height: 500px; overflow-y: auto;">
+                 <!-- 详细记录将在这里生成 -->
+             </div>
+         </div>
+     </div>
 </div>
 
 <script src="../script/api.js"></script>
@@ -349,12 +360,25 @@
     var longPressThreshold = 800; // 长按阈值（毫秒）
     var isSwipeInProgress = false; // 跟踪滑动状态
     var justEnteredMultiSelectByLongPress = false;
+    var shareAction = null; // 分享模块
+    
+    // 下拉刷新相关变量
+    var pullRefreshStartY = 0;
+    var pullRefreshCurrentY = 0;
+    var isPullRefreshing = false;
+    var pullRefreshThreshold = 80; // 下拉刷新阈值
 
     apiready = function() {
+        // 分享模块引入
+        shareAction = api.require('shareAction'); 
+        
         // 获取页面参数
         var pageParam = api.pageParam;
         if (pageParam && pageParam.currentYear) {
             currentYear = pageParam.currentYear;
+        } else {
+            // 如果没有参数，使用当前年份
+            currentYear = new Date().getFullYear();
         }
         
         // 设置页面标题
@@ -379,6 +403,9 @@
             goBack();
         });
         
+        // 初始化下拉刷新
+        initPullRefresh();
+        
 
     };
 
@@ -386,6 +413,160 @@
     function goBack() {
         api.closeWin();
     }
+    
+    // 刷新统计数据（供外部调用）
+    function refreshStatisticsData(year) {
+        if (year) {
+            currentYear = year;
+            // 更新页面标题
+            document.getElementById('pageTitle').textContent = currentYear + '年违停警报统计';
+            // 更新年份选择器
+            document.getElementById('yearSelector').value = currentYear;
+        }
+        
+        // 重新加载警报记录
+        loadAlertRecords();
+        
+        // 重新生成统计数据
+        generateStatistics();
+        
+        console.log('统计数据已刷新，年份：' + currentYear);
+    }
+    
+    // 将函数暴露到全局作用域，确保能被外部调用
+    window.refreshStatisticsData = refreshStatisticsData;
+    
+    // 只刷新数据，保持当前年份选择
+    function refreshDataOnly() {
+        // 重新加载警报记录（使用当前选择的年份）
+        loadAlertRecords();
+        
+        // 重新生成统计数据
+        generateStatistics();
+        
+        console.log('数据已刷新，年份：' + currentYear);
+    }
+    
+    // 将函数暴露到全局作用域
+    window.refreshDataOnly = refreshDataOnly;
+    
+    // 初始化下拉刷新
+    function initPullRefresh() {
+        var container = document.getElementById('statsContainer');
+        var indicator = document.getElementById('pullRefreshIndicator');
+        var refreshText = document.getElementById('pullRefreshText');
+        
+        // 触摸开始事件
+        container.addEventListener('touchstart', function(e) {
+            if (isPullRefreshing) return;
+            
+            // 只有在页面顶部时才启用下拉刷新
+            if (window.pageYOffset <= 0) {
+                pullRefreshStartY = e.touches[0].clientY;
+                pullRefreshCurrentY = pullRefreshStartY;
+            } else {
+                // 如果不在页面顶部，重置下拉刷新状态
+                pullRefreshStartY = 0;
+                pullRefreshCurrentY = 0;
+            }
+        }, { passive: true });
+        
+        // 触摸移动事件 - 设置为非被动模式以允许preventDefault
+        container.addEventListener('touchmove', function(e) {
+            if (isPullRefreshing) return;
+            
+            // 检查是否在页面顶部且有有效的触摸开始
+            if (window.pageYOffset <= 0 && pullRefreshStartY > 0) {
+                pullRefreshCurrentY = e.touches[0].clientY;
+                var deltaY = pullRefreshCurrentY - pullRefreshStartY;
+                
+                // 只处理向下拉的手势，且下拉距离足够大
+                if (deltaY > 10) { // 添加最小下拉距离阈值
+                    // 阻止默认行为
+                    e.preventDefault();
+                    
+                    // 计算下拉距离，使用更自然的阻尼效果
+                    var pullDistance = Math.min(deltaY * 0.6, pullRefreshThreshold * 1.2);
+                    
+                    // 移动指示器
+                    indicator.style.top = (pullDistance - 50) + 'px';
+                    
+                    // 同时移动页面内容，创造跟随效果
+                    container.style.transform = 'translateY(' + (pullDistance * 0.3) + 'px)';
+                    container.style.transition = 'none';
+                    
+                    // 更新提示文本
+                    if (pullDistance >= pullRefreshThreshold) {
+                        refreshText.textContent = '松手刷新';
+                    } else {
+                        refreshText.textContent = '下拉刷新';
+                    }
+                }
+            }
+        }, { passive: false });
+        
+        // 触摸结束事件
+        container.addEventListener('touchend', function(e) {
+            if (isPullRefreshing) return;
+            
+            if (window.pageYOffset <= 0 && pullRefreshStartY > 0) {
+                var deltaY = pullRefreshCurrentY - pullRefreshStartY;
+                
+                // 重置页面位置
+                container.style.transition = 'transform 0.3s ease';
+                container.style.transform = 'translateY(0px)';
+                
+                if (deltaY >= pullRefreshThreshold) {
+                    // 触发刷新
+                    triggerPullRefresh();
+                } else {
+                    // 重置指示器
+                    resetPullRefreshIndicator();
+                }
+                
+                pullRefreshStartY = 0;
+                pullRefreshCurrentY = 0;
+            }
+        }, { passive: true });
+    }
+    
+    // 触发下拉刷新
+    function triggerPullRefresh() {
+        isPullRefreshing = true;
+        var indicator = document.getElementById('pullRefreshIndicator');
+        var refreshText = document.getElementById('pullRefreshText');
+        
+        // 平滑显示刷新状态
+        indicator.style.transition = 'top 0.3s ease';
+        indicator.style.top = '0px';
+        refreshText.textContent = '正在刷新...';
+        
+        // 执行刷新
+        setTimeout(function() {
+            refreshDataOnly();
+            
+            // 显示刷新完成状态
+            refreshText.textContent = '刷新完成';
+            
+            // 延迟隐藏指示器
+            setTimeout(function() {
+                resetPullRefreshIndicator();
+                isPullRefreshing = false;
+            }, 800);
+        }, 600);
+    }
+    
+    // 重置下拉刷新指示器
+    function resetPullRefreshIndicator() {
+        var indicator = document.getElementById('pullRefreshIndicator');
+        var refreshText = document.getElementById('pullRefreshText');
+        
+        indicator.style.transition = 'top 0.3s ease';
+        indicator.style.top = '-50px';
+        refreshText.textContent = '下拉刷新';
+    }
+    
+
 
 
 
@@ -1077,7 +1258,7 @@
             
             // 添加触摸事件监听器，使用更安全的方式
             item.addEventListener('touchstart', handleTouchStart, { passive: true });
-            item.addEventListener('touchmove', handleTouchMove, { passive: true });
+            item.addEventListener('touchmove', handleTouchMove, { passive: false });
             item.addEventListener('touchend', handleTouchEnd, { passive: true });
             
             // 添加鼠标事件监听器（用于桌面端）
@@ -1599,7 +1780,6 @@
             console.log('分享文本：' + shareText);
             
             // 调用系统分享功能
-            var shareAction = api.require('shareAction');
             shareAction.shareText({
                 text: shareText
             });
@@ -1822,7 +2002,7 @@
         handleMouseDown(event, recordId);
         
         // 只有在非多选模式下才阻止默认滚动
-        if (!isMultiSelectMode && event.cancelable) {
+        if (!isMultiSelectMode) {
             event.preventDefault();
         }
     }
@@ -1863,7 +2043,7 @@
         }
         
         // 只有在非多选模式下才阻止默认滚动
-        if (!isMultiSelectMode && event.cancelable) {
+        if (!isMultiSelectMode) {
             event.preventDefault();
         }
     }

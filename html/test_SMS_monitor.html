@@ -59,6 +59,11 @@
         .number-input-disabled {color: #999; }
         .number-input-enabled {color: #000; }
         
+        /* 适配框架页面 */
+        .container {
+            padding-bottom: 20px; /* 减少底部间距 */
+        }
+        
         /* 自定义开关样式 */
         .switch {
             position: relative;
@@ -1238,15 +1243,26 @@
     
     // 显示统计页面
     function showStatistics() {
-        // 打开独立的统计页面
-        api.openWin({
-            name: 'test_SMS_monitor_statistics',
-            url: './test_SMS_monitor_statistics.html',
-            pageParam: {
-                currentYear: currentYear
-            }
-        });
+        // 通过父窗口切换页面
+        if (api.winName === 'homeFrame') {
+            // 如果在框架中，通知父窗口切换
+            api.execScript({
+                name: 'main',
+                script: 'switchPage("statistics");'
+            });
+        } else {
+            // 独立运行时，打开统计页面
+            api.openWin({
+                name: 'test_SMS_monitor_statistics',
+                url: './test_SMS_monitor_statistics.html',
+                pageParam: {
+                    currentYear: currentYear
+                }
+            });
+        }
     }
+    
+
     
 
 </script>
