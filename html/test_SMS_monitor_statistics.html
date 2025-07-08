@@ -267,21 +267,33 @@
         </div>
         
         <div class="stats-pattern" style="background: #d1ecf1; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
-            <h3 style="margin-top: 0; color: #0c5460;">行为模式</h3>
+            <h3 style="margin-top: 0; color: #0c5460;">行为模式 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击查看详情)</span></h3>
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                     onclick="showPatternDetail('weekday')" 
+                     onmouseover="this.style.transform='scale(1.02)'" 
+                     onmouseout="this.style.transform='scale(1)'">
                     <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakWeekday">-</div>
                     <div style="font-size: 12px; color: #666;">最频繁星期</div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                     onclick="showPatternDetail('hour')" 
+                     onmouseover="this.style.transform='scale(1.02)'" 
+                     onmouseout="this.style.transform='scale(1)'">
                     <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakHour">-</div>
                     <div style="font-size: 12px; color: #666;">最频繁时段</div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                     onclick="showPatternDetail('month')" 
+                     onmouseover="this.style.transform='scale(1.02)'" 
+                     onmouseout="this.style.transform='scale(1)'">
                     <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakMonth">-</div>
                     <div style="font-size: 12px; color: #666;">最频繁月份</div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                     onclick="showPatternDetail('prediction')" 
+                     onmouseover="this.style.transform='scale(1.02)'" 
+                     onmouseout="this.style.transform='scale(1)'">
                     <div style="font-size: 18px; font-weight: bold; color: #495057;" id="nextPrediction">-</div>
                     <div style="font-size: 12px; color: #666;">预测下次</div>
                 </div>
@@ -396,22 +408,30 @@
         // 生成统计数据
         generateStatistics();
         
-        // 监听返回键
-        api.addEventListener({
-            name: 'keyback'
-        }, function(ret, err) {
-            goBack();
-        });
-        
         // 初始化下拉刷新
         initPullRefresh();
         
-
     };
 
     // 返回上一页
     function goBack() {
-        api.closeWin();
+        console.log('返回键被触发，当前多选模式状态：', isMultiSelectMode);
+        
+        // 如果处于多选模式，先退出多选模式
+        if (isMultiSelectMode) {
+            console.log('退出多选模式');
+            exitMultiSelectMode();
+            api.toast({
+                msg: '已退出多选模式',
+                duration: 1500,
+                location: 'top'
+            });
+        } else {
+            console.log('关闭统计页面，回到首页');
+            // 非多选模式下，直接关闭frame，让主框架处理页面切换
+            console.log('关闭统计页面frame');
+            api.closeWin();
+        }
     }
     
     // 刷新统计数据（供外部调用）
@@ -435,6 +455,8 @@
     
     // 将函数暴露到全局作用域，确保能被外部调用
     window.refreshStatisticsData = refreshStatisticsData;
+    window.goBack = goBack;
+    window.refreshDataOnly = refreshDataOnly;
     
     // 只刷新数据，保持当前年份选择
     function refreshDataOnly() {
@@ -447,8 +469,7 @@
         console.log('数据已刷新，年份：' + currentYear);
     }
     
-    // 将函数暴露到全局作用域
-    window.refreshDataOnly = refreshDataOnly;
+
     
     // 初始化下拉刷新
     function initPullRefresh() {
@@ -1380,32 +1401,23 @@
 
     // 触摸开始处理
     function handleTouchStart(event) {
+        if (isMultiSelectMode) return; // 多选模式下禁用滑动删除
+        
+        var touch = event.touches[0];
         var recordItem = event.currentTarget;
         var recordId = recordItem.getAttribute('data-record-id');
-        var touch = event.touches[0];
         
-        // 记录触摸开始位置
         recordItem.setAttribute('data-touch-start-x', touch.clientX);
         recordItem.setAttribute('data-touch-start-y', touch.clientY);
         recordItem.setAttribute('data-touch-current-x', touch.clientX);
         recordItem.setAttribute('data-touch-current-y', touch.clientY);
         recordItem.setAttribute('data-is-touching', 'true');
         
-        touchStartY = touch.clientY;
-        touchStartTime = Date.now();
-        hasMoved = false;
+        isSwipeInProgress = false; // 重置滑动状态
         
-        // 添加长按视觉反馈
-        if (recordItem) {
-            recordItem.classList.add('long-pressing');
-        }
-        
-        // 开始长按计时器
-        longPressTimer = setTimeout(function() {
-            if (!hasMoved && !isMultiSelectMode && !isSwipeInProgress) {
-                enterMultiSelectMode(recordId);
-            }
-        }, longPressThreshold);
+        // 同时触发长按逻辑
+        handleMouseDown(event, recordId);
+        // 不要在touchstart中调用preventDefault
     }
 
 
@@ -2000,11 +2012,7 @@
         
         // 同时触发长按逻辑
         handleMouseDown(event, recordId);
-        
-        // 只有在非多选模式下才阻止默认滚动
-        if (!isMultiSelectMode) {
-            event.preventDefault();
-        }
+        // 不要在touchstart中调用preventDefault
     }
 
     function handleTouchMove(event) {
@@ -2040,11 +2048,10 @@
             recordItem.style.transform = `translateX(-${swipeDistance}px)`;
             recordItem.classList.add('swiping');
             isSwipeInProgress = true; // 标记正在滑动
-        }
-        
-        // 只有在非多选模式下才阻止默认滚动
-        if (!isMultiSelectMode) {
-            event.preventDefault();
+            // 只有在实际进行滑动时才阻止默认滚动
+            if (event.cancelable) {
+                event.preventDefault();
+            }
         }
     }
 
@@ -2120,11 +2127,7 @@
         
         // 同时触发长按逻辑
         handleMouseDown(event, recordId);
-        
-        // 只有在非多选模式下才阻止默认行为
-        if (!isMultiSelectMode && event.cancelable) {
-            event.preventDefault();
-        }
+        // 不要在mousedown中调用preventDefault
     }
 
     function handleMouseMoveForSwipe(event) {
@@ -2160,11 +2163,7 @@
             recordItem.classList.add('swiping');
             isSwipeInProgress = true; // 标记正在滑动
         }
-        
-        // 只有在非多选模式下才阻止默认行为
-        if (!isMultiSelectMode && event.cancelable) {
-            event.preventDefault();
-        }
+        // 不要在mousemove中调用preventDefault
     }
 
     function handleMouseUpForSwipe(event) {
@@ -2328,6 +2327,304 @@
             resetAllSwipeStates();
         }
     });
+
+    // 显示行为模式详情
+    function showPatternDetail(type) {
+        var title = '';
+        var content = '';
+        var records = [];
+        
+        switch(type) {
+            case 'weekday':
+                var peakWeekday = document.getElementById('peakWeekday').textContent;
+                if (peakWeekday === '-') {
+                    api.toast({
+                        msg: '暂无数据',
+                        duration: 2000,
+                        location: 'top'
+                    });
+                    return;
+                }
+                
+                title = '星期详情 - ' + peakWeekday;
+                
+                // 获取该星期的所有记录
+                var weekdayIndex = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'].indexOf(peakWeekday);
+                records = alertRecords.filter(function(record) {
+                    return record.weekday === weekdayIndex;
+                });
+                
+                content = generatePatternDetailContent(records, '星期', peakWeekday);
+                break;
+                
+            case 'hour':
+                var peakHour = document.getElementById('peakHour').textContent;
+                if (peakHour === '-') {
+                    api.toast({
+                        msg: '暂无数据',
+                        duration: 2000,
+                        location: 'top'
+                    });
+                    return;
+                }
+                
+                title = '时段详情 - ' + peakHour;
+                
+                // 获取该时段的所有记录
+                var hour = parseInt(peakHour.replace('时', ''));
+                records = alertRecords.filter(function(record) {
+                    var recordHour = parseInt(record.time.split(':')[0]);
+                    return recordHour === hour;
+                });
+                
+                content = generatePatternDetailContent(records, '时段', peakHour);
+                break;
+                
+            case 'month':
+                var peakMonth = document.getElementById('peakMonth').textContent;
+                if (peakMonth === '-') {
+                    api.toast({
+                        msg: '暂无数据',
+                        duration: 2000,
+                        location: 'top'
+                    });
+                    return;
+                }
+                
+                title = '月份详情 - ' + peakMonth;
+                
+                // 获取该月份的所有记录
+                var month = parseInt(peakMonth.replace('月', ''));
+                records = alertRecords.filter(function(record) {
+                    return record.month === month;
+                });
+                
+                content = generatePatternDetailContent(records, '月份', peakMonth);
+                break;
+                
+            case 'prediction':
+                var nextPrediction = document.getElementById('nextPrediction').textContent;
+                if (nextPrediction === '-') {
+                    api.toast({
+                        msg: '暂无预测数据',
+                        duration: 2000,
+                        location: 'top'
+                    });
+                    return;
+                }
+                
+                title = '预测详情';
+                content = generatePredictionDetailContent();
+                break;
+        }
+        
+        // 显示详情弹窗
+        showDetailDialog(title, content);
+    }
+    
+    // 生成行为模式详情内容
+    function generatePatternDetailContent(records, type, value) {
+        if (records.length === 0) {
+            return '<p style="text-align: center; color: #666;">暂无相关数据</p>';
+        }
+        
+        var content = '<div style="max-height: 400px; overflow-y: auto;">';
+        
+        // 统计信息
+        content += '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">';
+        content += '<h4 style="margin: 0 0 10px 0; color: #495057;">📊 统计信息</h4>';
+        content += '<p style="margin: 5px 0; color: #666;">• 总记录数：<strong>' + records.length + '</strong> 条</p>';
+        content += '<p style="margin: 5px 0; color: #666;">• 占比：<strong>' + ((records.length / alertRecords.length) * 100).toFixed(1) + '%</strong></p>';
+        
+        // 计算平均间隔
+        if (records.length > 1) {
+            var sortedRecords = records.sort(function(a, b) {
+                return new Date(a.timestamp) - new Date(b.timestamp);
+            });
+            
+            var totalInterval = 0;
+            for (var i = 1; i < sortedRecords.length; i++) {
+                var interval = (new Date(sortedRecords[i].timestamp) - new Date(sortedRecords[i-1].timestamp)) / (1000 * 60 * 60 * 24);
+                totalInterval += interval;
+            }
+            var avgInterval = totalInterval / (sortedRecords.length - 1);
+            content += '<p style="margin: 5px 0; color: #666;">• 平均间隔：<strong>' + avgInterval.toFixed(1) + '</strong> 天</p>';
+        }
+        
+        content += '</div>';
+        
+        // 详细记录列表
+        content += '<div style="background: white; border-radius: 8px; padding: 15px;">';
+        content += '<h4 style="margin: 0 0 15px 0; color: #495057;">📝 详细记录</h4>';
+        
+        // 按时间倒序排列
+        var sortedRecords = records.sort(function(a, b) {
+            return new Date(b.timestamp) - new Date(a.timestamp);
+        });
+        
+        sortedRecords.forEach(function(record, index) {
+            if (index < 10) { // 只显示最近10条记录
+                content += '<div style="border-bottom: 1px solid #eee; padding: 10px 0; margin-bottom: 10px;">';
+                content += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">';
+                content += '<span style="font-weight: bold; color: #333;">' + record.date + ' ' + record.time + '</span>';
+                content += '<span style="font-size: 12px; color: #666;">#' + record.id + '</span>';
+                content += '</div>';
+                content += '<div style="color: #666; font-size: 14px; line-height: 1.4;">' + record.content + '</div>';
+                content += '<div style="font-size: 12px; color: #999; margin-top: 5px;">来源：' + record.phoneNumber + '</div>';
+                content += '</div>';
+            }
+        });
+        
+        if (records.length > 10) {
+            content += '<div style="text-align: center; color: #666; font-size: 12px; padding: 10px;">还有 ' + (records.length - 10) + ' 条记录...</div>';
+        }
+        
+        content += '</div>';
+        content += '</div>';
+        
+        return content;
+    }
+    
+    // 生成预测详情内容
+    function generatePredictionDetailContent() {
+        var content = '<div style="max-height: 400px; overflow-y: auto;">';
+        
+        // 预测算法说明
+        content += '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">';
+        content += '<h4 style="margin: 0 0 10px 0; color: #495057;">🔮 预测算法</h4>';
+        content += '<p style="margin: 5px 0; color: #666; line-height: 1.5;">基于历史数据的间隔分析，计算平均违章间隔时间，预测下次可能违章的时间点。</p>';
+        content += '</div>';
+        
+        // 历史间隔分析
+        if (alertRecords.length >= 2) {
+            var sortedRecords = alertRecords.sort(function(a, b) {
+                return new Date(a.timestamp) - new Date(b.timestamp);
+            });
+            
+            content += '<div style="background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px;">';
+            content += '<h4 style="margin: 0 0 10px 0; color: #495057;">📈 间隔分析</h4>';
+            
+            var intervals = [];
+            for (var i = 1; i < sortedRecords.length; i++) {
+                var interval = (new Date(sortedRecords[i].timestamp) - new Date(sortedRecords[i-1].timestamp)) / (1000 * 60 * 60 * 24);
+                intervals.push(interval);
+            }
+            
+            var avgInterval = intervals.reduce(function(sum, val) { return sum + val; }, 0) / intervals.length;
+            var minInterval = Math.min(...intervals);
+            var maxInterval = Math.max(...intervals);
+            
+            content += '<p style="margin: 5px 0; color: #666;">• 平均间隔：<strong>' + avgInterval.toFixed(1) + '</strong> 天</p>';
+            content += '<p style="margin: 5px 0; color: #666;">• 最短间隔：<strong>' + minInterval.toFixed(1) + '</strong> 天</p>';
+            content += '<p style="margin: 5px 0; color: #666;">• 最长间隔：<strong>' + maxInterval.toFixed(1) + '</strong> 天</p>';
+            content += '</div>';
+        }
+        
+        // 预测建议
+        content += '<div style="background: #e3f2fd; padding: 15px; border-radius: 8px;">';
+        content += '<h4 style="margin: 0 0 10px 0; color: #1976d2;">💡 预测建议</h4>';
+        content += '<p style="margin: 5px 0; color: #333; line-height: 1.5;">• 预测仅供参考，实际违章时间可能因各种因素而变化</p>';
+        content += '<p style="margin: 5px 0; color: #333; line-height: 1.5;">• 建议在预测时间前后特别注意驾驶行为</p>';
+        content += '<p style="margin: 5px 0; color: #333; line-height: 1.5;">• 保持良好的驾驶习惯是避免违章的最佳方法</p>';
+        content += '</div>';
+        
+        content += '</div>';
+        
+        return content;
+    }
+    
+    // 显示详情弹窗
+    function showDetailDialog(title, content) {
+        // 创建弹窗容器
+        var dialog = document.createElement('div');
+        dialog.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        `;
+        
+        // 创建弹窗内容
+        var dialogContent = document.createElement('div');
+        dialogContent.style.cssText = `
+            background: white;
+            border-radius: 12px;
+            max-width: 90%;
+            max-height: 80%;
+            width: 100%;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        `;
+        
+        // 创建弹窗头部
+        var dialogHeader = document.createElement('div');
+        dialogHeader.style.cssText = `
+            padding: 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+        `;
+        dialogHeader.innerHTML = `
+            <h3 style="margin: 0; color: #333; font-size: 18px;">${title}</h3>
+            <button onclick="closeDetailDialog()" style="
+                background: none;
+                border: none;
+                font-size: 24px;
+                color: #666;
+                cursor: pointer;
+                padding: 0;
+                width: 30px;
+                height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                transition: background 0.2s;
+            " onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='transparent'">×</button>
+        `;
+        
+        // 创建弹窗主体
+        var dialogBody = document.createElement('div');
+        dialogBody.style.cssText = `
+            padding: 20px;
+            overflow-y: auto;
+            max-height: 60vh;
+        `;
+        dialogBody.innerHTML = content;
+        
+        // 组装弹窗
+        dialogContent.appendChild(dialogHeader);
+        dialogContent.appendChild(dialogBody);
+        dialog.appendChild(dialogContent);
+        
+        // 添加到页面
+        document.body.appendChild(dialog);
+        
+        // 点击背景关闭弹窗
+        dialog.addEventListener('click', function(e) {
+            if (e.target === dialog) {
+                closeDetailDialog();
+            }
+        });
+        
+        // 添加关闭函数到全局
+        window.closeDetailDialog = function() {
+            if (dialog && dialog.parentNode) {
+                dialog.parentNode.removeChild(dialog);
+            }
+        };
+    }
+
 </script>
 
 </body>

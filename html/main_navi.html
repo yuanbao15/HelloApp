@@ -70,7 +70,7 @@
                     7、TEST-VIP短信监听
                 </div>
             </li>
-            <li class="aui-list-item" tapmode onclick="openWin('test_SMS_main_frame')">
+            <li class="aui-list-item" tapmode onclick="openWin2('test_SMS_main_frame')">
                 <div class="aui-list-item-inner aui-list-item-arrow">
                     8、TEST-VIP短信监听-主框架
                 </div>
@@ -112,6 +112,17 @@
         });
     }
 
+
+    // 不需要about 头页面的打开目标页面
+    function openWin2(pageName) {
+        api.openWin({
+            name: pageName,
+            url: './' + pageName + '.html',
+            pageParam: {
+                name: 'test'
+            }
+        });
+    }
 
 
 </script>
