@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
     <title>违停警报统计</title>
     <link rel="stylesheet" href="../css/api.css">
+    <script src="https://unpkg.com/mescroll.js@1.4.2/mescroll.min.js"></script>
     <style>
         .container {padding: 15px;}
         .stats-container {font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;}
@@ -199,164 +200,231 @@
             padding-bottom: 20px; /* 减少底部间距 */
         }
 
+        /* mescroll样式 */
+        .mescroll {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            overflow: auto;
+        }
+        
+        .mescroll-body {
+            position: relative;
+            /* height: 100%; */
+            /* overflow: hidden; */
+        }
+        
+        .mescroll-body .stats-container {
+            padding-bottom: 0;
+            min-height: 100vh;
+        }
+
+        /* 自定义下拉刷新样式 */
+        .mescroll-downwarp {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .mescroll-downwarp .downwarp-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 0 20px;
+            text-align: center;
+        }
+        
+        .mescroll-downwarp .downwarp-tip {
+            margin-left: 8px;
+            font-size: 13px;
+            opacity: 0.9;
+        }
+        
+        .mescroll-downwarp .downwarp-progress {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 弹窗动画 */
+        .dialog-fade {
+            opacity: 0;
+            transform: scale(0.96);
+            transition: opacity 0.25s cubic-bezier(.4,0,.2,1), transform 0.25s cubic-bezier(.4,0,.2,1);
+        }
+        .dialog-fade.show {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+
     </style>
 </head>
 <body>
-<!-- 下拉刷新指示器 -->
-<div id="pullRefreshIndicator" style="position: fixed; top: -50px; left: 0; right: 0; height: 50px; background: #f8f9fa; color: #666; display: flex; align-items: center; justify-content: center; font-size: 14px; z-index: 1000; transition: top 0.3s ease; border-bottom: 1px solid #e9ecef;">
-    <span id="pullRefreshText">下拉刷新</span>
-</div>
-
-<!-- 图表悬浮提示框 -->
-<div id="chartTooltip" class="chart-tooltip"></div>
-
-<div class="stats-container" id="statsContainer">
-    <div class="stats-header">
-        <h2 style="margin: 0;" id="pageTitle">年度违停警报统计</h2>
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <select id="yearSelector" onchange="changeYear(this.value)" style="padding: 5px; border: none; border-radius: 3px; background: white; color: #333;">
-                <!-- 年份选项将在这里动态生成 -->
-            </select>
-            <button onclick="goBack()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
-        </div>
-    </div>
-    
-    <div class="stats-content" style="padding: 15px;">
-        <div class="stats-summary" style="background: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <h3 style="margin-top: 0; color: #333;">统计概览</h3>
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 24px; font-weight: bold; color: #ff4444;" id="totalAlerts">0</div>
-                    <div style="font-size: 12px; color: #666;">总警报次数</div>
-                </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 24px; font-weight: bold; color: #007aff;" id="avgPerMonth">0</div>
-                    <div style="font-size: 12px; color: #666;">月平均次数</div>
-                </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 24px; font-weight: bold; color: #44aa44;" id="maxMonth">0</div>
-                    <div style="font-size: 12px; color: #666;">最高月次数</div>
-                </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 24px; font-weight: bold; color: #ff8800;" id="lastAlert">-</div>
-                    <div style="font-size: 12px; color: #666;">最近警报</div>
+<!-- mescroll容器 -->
+<div id="mescroll" class="mescroll">
+    <div class="mescroll-body">
+        <div class="stats-container" id="statsContainer">
+            <div class="stats-header">
+                <h2 style="margin: 0;" id="pageTitle">年度违停警报统计</h2>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <select id="yearSelector" onchange="changeYear(this.value)" style="padding: 5px; border: none; border-radius: 3px; background: white; color: #333;">
+                        <!-- 年份选项将在这里动态生成 -->
+                    </select>
+                    <button onclick="goBack()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
                 </div>
             </div>
-        </div>
-        
-        <div class="stats-risk" style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
-            <h3 style="margin-top: 0; color: #856404;">风险分析</h3>
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 20px; font-weight: bold; color: #dc3545;" id="maxConsecutiveDays">0</div>
-                    <div style="font-size: 12px; color: #666;">最长连续天数</div>
+            
+            <div class="stats-content" style="padding: 15px;">
+                <div class="stats-summary" style="background: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0; color: #333;">统计概览</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 24px; font-weight: bold; color: #ff4444;" id="totalAlerts">0</div>
+                            <div style="font-size: 12px; color: #666;">总警报次数</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 24px; font-weight: bold; color: #007aff;" id="avgPerMonth">0</div>
+                            <div style="font-size: 12px; color: #666;">月平均次数</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 24px; font-weight: bold; color: #44aa44;" id="maxMonth">0</div>
+                            <div style="font-size: 12px; color: #666;">最高月次数</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 24px; font-weight: bold; color: #ff8800;" id="lastAlert">-</div>
+                            <div style="font-size: 12px; color: #666;">最近警报</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 20px; font-weight: bold; color: #6f42c1;" id="avgInterval">-</div>
-                    <div style="font-size: 12px; color: #666;">平均间隔(天)</div>
+                
+                <div class="stats-risk" style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                    <h3 style="margin-top: 0; color: #856404;">风险分析</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 20px; font-weight: bold; color: #dc3545;" id="maxConsecutiveDays">0</div>
+                            <div style="font-size: 12px; color: #666;">最长连续天数</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 20px; font-weight: bold; color: #6f42c1;" id="avgInterval">-</div>
+                            <div style="font-size: 12px; color: #666;">平均间隔(天)</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 20px; font-weight: bold; color: #fd7e14;" id="trendStatus">-</div>
+                            <div style="font-size: 12px; color: #666;">近期趋势</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 20px; font-weight: bold; color: #20c997;" id="riskLevel">-</div>
+                            <div style="font-size: 12px; color: #666;">风险等级</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 20px; font-weight: bold; color: #fd7e14;" id="trendStatus">-</div>
-                    <div style="font-size: 12px; color: #666;">近期趋势</div>
+                
+                <div class="stats-pattern" style="background: #d1ecf1; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                    <h3 style="margin-top: 0; color: #0c5460;">行为模式 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击查看详情)</span></h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                             onclick="showPatternDetail('weekday')" 
+                             onmouseover="this.style.transform='scale(1.02)'" 
+                             onmouseout="this.style.transform='scale(1)'">
+                            <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakWeekday">-</div>
+                            <div style="font-size: 12px; color: #666;">最频繁星期</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                             onclick="showPatternDetail('hour')" 
+                             onmouseover="this.style.transform='scale(1.02)'" 
+                             onmouseout="this.style.transform='scale(1)'">
+                            <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakHour">-</div>
+                            <div style="font-size: 12px; color: #666;">最频繁时段</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                             onclick="showPatternDetail('month')" 
+                             onmouseover="this.style.transform='scale(1.02)'" 
+                             onmouseout="this.style.transform='scale(1)'">
+                            <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakMonth">-</div>
+                            <div style="font-size: 12px; color: #666;">最频繁月份</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
+                             onclick="showPatternDetail('prediction')" 
+                             onmouseover="this.style.transform='scale(1.02)'" 
+                             onmouseout="this.style.transform='scale(1)'">
+                            <div style="font-size: 18px; font-weight: bold; color: #495057;" id="nextPrediction">-</div>
+                            <div style="font-size: 12px; color: #666;">预测下次</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-size: 20px; font-weight: bold; color: #20c997;" id="riskLevel">-</div>
-                    <div style="font-size: 12px; color: #666;">风险等级</div>
+                
+                <div class="stats-advice" style="background: #d4edda; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                    <h3 style="margin-top: 0; color: #155724;">智能建议</h3>
+                    <div id="smartAdvice" style="background: white; padding: 15px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                        <!-- 智能建议将在这里生成 -->
+                    </div>
                 </div>
-            </div>
-        </div>
-        
-        <div class="stats-pattern" style="background: #d1ecf1; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
-            <h3 style="margin-top: 0; color: #0c5460;">行为模式 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击查看详情)</span></h3>
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
-                     onclick="showPatternDetail('weekday')" 
-                     onmouseover="this.style.transform='scale(1.02)'" 
-                     onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakWeekday">-</div>
-                    <div style="font-size: 12px; color: #666;">最频繁星期</div>
+                
+                <div class="stats-charts" style="margin-bottom: 20px;">
+                    <h3 style="color: #333;">月度趋势 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击柱子查看详情)</span></h3>
+                    <div id="monthlyChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
+                        <!-- 月度柱状图将在这里生成 -->
+                    </div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
-                     onclick="showPatternDetail('hour')" 
-                     onmouseover="this.style.transform='scale(1.02)'" 
-                     onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakHour">-</div>
-                    <div style="font-size: 12px; color: #666;">最频繁时段</div>
+                
+                <div class="stats-charts" style="margin-bottom: 20px;">
+                    <h3 style="color: #333;">星期分布 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击柱子查看详情)</span></h3>
+                    <div id="weekdayChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
+                        <!-- 星期柱状图将在这里生成 -->
+                    </div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
-                     onclick="showPatternDetail('month')" 
-                     onmouseover="this.style.transform='scale(1.02)'" 
-                     onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 18px; font-weight: bold; color: #495057;" id="peakMonth">-</div>
-                    <div style="font-size: 12px; color: #666;">最频繁月份</div>
+                
+                <div class="stats-charts" style="margin-bottom: 20px;">
+                    <h3 style="color: #333;">时段分布 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击柱子查看详情)</span></h3>
+                    <div id="timeChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
+                        <!-- 时段柱状图将在这里生成 -->
+                    </div>
                 </div>
-                <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: all 0.2s ease;" 
-                     onclick="showPatternDetail('prediction')" 
-                     onmouseover="this.style.transform='scale(1.02)'" 
-                     onmouseout="this.style.transform='scale(1)'">
-                    <div style="font-size: 18px; font-weight: bold; color: #495057;" id="nextPrediction">-</div>
-                    <div style="font-size: 12px; color: #666;">预测下次</div>
+                
+                <div class="stats-actions" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <button class="btn" onclick="exportStatistics()" style="flex: 1;">导出数据</button>
+                    <button class="btn btn-success" onclick="shareStatistics()" style="flex: 1;">分享统计</button>
+                    <button class="btn" onclick="toggleMultiSelect()" style="flex: 1;" id="multiSelectBtn">多选删除</button>
+                    <button class="btn btn-danger" onclick="clearStatistics()" style="flex: 1;">清空记录</button>
                 </div>
-            </div>
-        </div>
-        
-        <div class="stats-advice" style="background: #d4edda; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #28a745;">
-            <h3 style="margin-top: 0; color: #155724;">智能建议</h3>
-            <div id="smartAdvice" style="background: white; padding: 15px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                <!-- 智能建议将在这里生成 -->
-            </div>
-        </div>
-        
-        <div class="stats-charts" style="margin-bottom: 20px;">
-            <h3 style="color: #333;">月度趋势 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击柱子查看详情)</span></h3>
-            <div id="monthlyChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
-                <!-- 月度柱状图将在这里生成 -->
-            </div>
-        </div>
-        
-        <div class="stats-charts" style="margin-bottom: 20px;">
-            <h3 style="color: #333;">星期分布 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击柱子查看详情)</span></h3>
-            <div id="weekdayChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
-                <!-- 星期柱状图将在这里生成 -->
-            </div>
-        </div>
-        
-        <div class="stats-charts" style="margin-bottom: 20px;">
-            <h3 style="color: #333;">时段分布 <span style="font-size: 12px; color: #666; font-weight: normal;">(点击柱子查看详情)</span></h3>
-            <div id="timeChart" style="height: 200px; background: #f8f8f8; border-radius: 8px; display: flex; align-items: end; justify-content: space-around; padding: 20px;">
-                <!-- 时段柱状图将在这里生成 -->
-            </div>
-        </div>
-        
-        <div class="stats-actions" style="display: flex; gap: 10px; margin-bottom: 20px;">
-            <button class="btn" onclick="exportStatistics()" style="flex: 1;">导出数据</button>
-            <button class="btn btn-success" onclick="shareStatistics()" style="flex: 1;">分享统计</button>
-            <button class="btn" onclick="toggleMultiSelect()" style="flex: 1;" id="multiSelectBtn">多选删除</button>
-            <button class="btn btn-danger" onclick="clearStatistics()" style="flex: 1;">清空记录</button>
-        </div>
-        
-        <div id="multiSelectActions" style="display: none; margin-bottom: 20px;">
-            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
-                <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
-                <button class="btn btn-danger" onclick="deleteSelectedRecords()" style="flex: 1;">删除选中</button>
-            </div>
-            <div style="text-align: center; color: #666; font-size: 12px;">
-                已选择 <span id="selectedCount">0</span> 条记录
-            </div>
-            <div style="text-align: center; color: #999; font-size: 11px; margin-top: 5px;">
-                提示：长按记录项可进入多选模式，滑动时不会触发多选
-            </div>
-        </div>
-        
-        <div class="stats-list">
-            <h3 style="color: #333;">详细记录 <span style="font-size: 12px; color: #666; font-weight: normal;">(左滑删除 | 长按多选)</span></h3>
-                         <div id="recordsList" style="max-height: 500px; overflow-y: auto;">
-                 <!-- 详细记录将在这里生成 -->
+                
+                <div id="multiSelectActions" style="display: none; margin-bottom: 20px;">
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
+                        <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
+                        <button class="btn btn-danger" onclick="deleteSelectedRecords()" style="flex: 1;">删除选中</button>
+                    </div>
+                    <div style="text-align: center; color: #666; font-size: 12px;">
+                        已选择 <span id="selectedCount">0</span> 条记录
+                    </div>
+                    <div style="text-align: center; color: #999; font-size: 11px; margin-top: 5px;">
+                        提示：长按记录项可进入多选模式，滑动时不会触发多选
+                    </div>
+                </div>
+                
+                <div class="stats-list">
+                    <h3 style="color: #333;">详细记录 <span style="font-size: 12px; color: #666; font-weight: normal;">(左滑删除 | 长按多选)</span></h3>
+                             <div id="recordsList" style="max-height: 500px; overflow-y: auto;">
+                     <!-- 详细记录将在这里生成 -->
+                 </div>
              </div>
          </div>
      </div>
-</div>
+ </div>
+
+<!-- 图表悬浮提示框 -->
+<div id="chartTooltip" class="chart-tooltip"></div>
 
 <script src="../script/api.js"></script>
 <script>
@@ -369,17 +437,12 @@
     var touchStartTime = 0; // 触摸开始时间
     var hasMoved = false; // 是否发生了移动
     var moveThreshold = 10; // 移动阈值（像素）
-    var longPressThreshold = 800; // 长按阈值（毫秒）
+    var longPressThreshold = 1000; // 长按阈值（毫秒）
     var isSwipeInProgress = false; // 跟踪滑动状态
     var justEnteredMultiSelectByLongPress = false;
     var shareAction = null; // 分享模块
+    var mescroll = null; // mescroll实例
     
-    // 下拉刷新相关变量
-    var pullRefreshStartY = 0;
-    var pullRefreshCurrentY = 0;
-    var isPullRefreshing = false;
-    var pullRefreshThreshold = 80; // 下拉刷新阈值
-
     apiready = function() {
         // 分享模块引入
         shareAction = api.require('shareAction'); 
@@ -402,17 +465,66 @@
         // 设置年份选择器默认值
         document.getElementById('yearSelector').value = currentYear;
         
+        // 初始化mescroll
+        initMescroll();
+        
         // 加载警报记录
         loadAlertRecords();
         
         // 生成统计数据
         generateStatistics();
-        
-        // 初始化下拉刷新
-        initPullRefresh();
-        
     };
 
+    // 初始化mescroll
+    function initMescroll() {
+        mescroll = new MeScroll("mescroll", {
+            isBounce: true, // 允许弹性滚动
+            down: {
+                auto: false, // 禁用自动下拉刷新
+                callback: function() {
+                    // 只在mescroll容器顶部才刷新
+                    var scrollTop = document.getElementById('mescroll').scrollTop;
+                    if (scrollTop <= 0) {
+                        refreshDataOnly();
+                    } else {
+                        mescroll.endSuccess();
+                    }
+                },
+                htmlContent: '<div class="downwarp-content"><div class="downwarp-progress"></div><div class="downwarp-tip">正在刷新数据...</div></div>',
+                offset: 60,
+                textInOffset: '下拉刷新',
+                textOutOffset: '释放刷新',
+                textLoading: '正在刷新...',
+                threshold: 50
+            },
+            up: {
+                auto: false,
+                callback: function() {
+                    mescroll.endSuccess();
+                },
+                page: {
+                    num: 0,
+                    size: 10,
+                    time: Date.now()
+                },
+                htmlNodata: '已经到底了~',
+                htmlLoading: '',
+                htmlError: ''
+            }
+        });
+
+        // // mescroll初始化后，强制隐藏下拉刷新区域，防止初始化时显示在顶部
+        // var downwarp = document.querySelector('.mescroll-downwarp');
+        // // 先隐藏下拉刷新区域，防止初始化时显示在顶部
+        // if (downwarp) {
+        //     downwarp.style.display = 'none';
+        //     // 监听下拉动作，开始下拉时再显示
+        //     document.getElementById('mescroll').addEventListener('touchstart', function() {
+        //         downwarp.style.display = 'block';
+        //     }, { once: true });
+        // }
+    }
+    
     // 返回上一页
     function goBack() {
         console.log('返回键被触发，当前多选模式状态：', isMultiSelectMode);
@@ -467,130 +579,19 @@
         generateStatistics();
         
         console.log('数据已刷新，年份：' + currentYear);
+        // 确保刷新完成后调用endSuccess
+        if (mescroll) {
+            mescroll.endSuccess();
+        }
+        api.toast({
+            msg: '数据已刷新，年份：' + currentYear,
+            location: 'bottom',
+            duration: 2000
+        });
     }
     
 
     
-    // 初始化下拉刷新
-    function initPullRefresh() {
-        var container = document.getElementById('statsContainer');
-        var indicator = document.getElementById('pullRefreshIndicator');
-        var refreshText = document.getElementById('pullRefreshText');
-        
-        // 触摸开始事件
-        container.addEventListener('touchstart', function(e) {
-            if (isPullRefreshing) return;
-            
-            // 只有在页面顶部时才启用下拉刷新
-            if (window.pageYOffset <= 0) {
-                pullRefreshStartY = e.touches[0].clientY;
-                pullRefreshCurrentY = pullRefreshStartY;
-            } else {
-                // 如果不在页面顶部，重置下拉刷新状态
-                pullRefreshStartY = 0;
-                pullRefreshCurrentY = 0;
-            }
-        }, { passive: true });
-        
-        // 触摸移动事件 - 设置为非被动模式以允许preventDefault
-        container.addEventListener('touchmove', function(e) {
-            if (isPullRefreshing) return;
-            
-            // 检查是否在页面顶部且有有效的触摸开始
-            if (window.pageYOffset <= 0 && pullRefreshStartY > 0) {
-                pullRefreshCurrentY = e.touches[0].clientY;
-                var deltaY = pullRefreshCurrentY - pullRefreshStartY;
-                
-                // 只处理向下拉的手势，且下拉距离足够大
-                if (deltaY > 10) { // 添加最小下拉距离阈值
-                    // 阻止默认行为
-                    e.preventDefault();
-                    
-                    // 计算下拉距离，使用更自然的阻尼效果
-                    var pullDistance = Math.min(deltaY * 0.6, pullRefreshThreshold * 1.2);
-                    
-                    // 移动指示器
-                    indicator.style.top = (pullDistance - 50) + 'px';
-                    
-                    // 同时移动页面内容，创造跟随效果
-                    container.style.transform = 'translateY(' + (pullDistance * 0.3) + 'px)';
-                    container.style.transition = 'none';
-                    
-                    // 更新提示文本
-                    if (pullDistance >= pullRefreshThreshold) {
-                        refreshText.textContent = '松手刷新';
-                    } else {
-                        refreshText.textContent = '下拉刷新';
-                    }
-                }
-            }
-        }, { passive: false });
-        
-        // 触摸结束事件
-        container.addEventListener('touchend', function(e) {
-            if (isPullRefreshing) return;
-            
-            if (window.pageYOffset <= 0 && pullRefreshStartY > 0) {
-                var deltaY = pullRefreshCurrentY - pullRefreshStartY;
-                
-                // 重置页面位置
-                container.style.transition = 'transform 0.3s ease';
-                container.style.transform = 'translateY(0px)';
-                
-                if (deltaY >= pullRefreshThreshold) {
-                    // 触发刷新
-                    triggerPullRefresh();
-                } else {
-                    // 重置指示器
-                    resetPullRefreshIndicator();
-                }
-                
-                pullRefreshStartY = 0;
-                pullRefreshCurrentY = 0;
-            }
-        }, { passive: true });
-    }
-    
-    // 触发下拉刷新
-    function triggerPullRefresh() {
-        isPullRefreshing = true;
-        var indicator = document.getElementById('pullRefreshIndicator');
-        var refreshText = document.getElementById('pullRefreshText');
-        
-        // 平滑显示刷新状态
-        indicator.style.transition = 'top 0.3s ease';
-        indicator.style.top = '0px';
-        refreshText.textContent = '正在刷新...';
-        
-        // 执行刷新
-        setTimeout(function() {
-            refreshDataOnly();
-            
-            // 显示刷新完成状态
-            refreshText.textContent = '刷新完成';
-            
-            // 延迟隐藏指示器
-            setTimeout(function() {
-                resetPullRefreshIndicator();
-                isPullRefreshing = false;
-            }, 800);
-        }, 600);
-    }
-    
-    // 重置下拉刷新指示器
-    function resetPullRefreshIndicator() {
-        var indicator = document.getElementById('pullRefreshIndicator');
-        var refreshText = document.getElementById('pullRefreshText');
-        
-        indicator.style.transition = 'top 0.3s ease';
-        indicator.style.top = '-50px';
-        refreshText.textContent = '下拉刷新';
-    }
-    
-
-
-
-
     // 动态生成年份选择器选项
     function generateYearOptions() {
         var yearSelector = document.getElementById('yearSelector');
@@ -1186,6 +1187,10 @@
             bars.forEach(function(bar) {
                 var height = bar.getAttribute('data-height');
                 bar.style.height = height + 'px';
+                // 让柱状图支持滑动冒泡到mescroll
+                bar.addEventListener('touchstart', function(e) { /* 不阻止冒泡 */ });
+                bar.addEventListener('touchmove', function(e) { /* 不阻止冒泡 */ });
+                bar.addEventListener('touchend', function(e) { /* 不阻止冒泡 */ });
             });
         }, 300);
     }
@@ -1387,13 +1392,33 @@
         `;
         
         document.body.insertAdjacentHTML('beforeend', detailHTML);
+
+        // 防止滑动穿透
+        document.body.style.overflow = 'hidden';
+
+        // 添加淡入动画
+        var detailModal = document.querySelector('.detail-modal');
+        if (detailModal) {
+            detailModal.classList.add('dialog-fade');
+            setTimeout(function() {
+                detailModal.classList.add('show');
+            }, 10);
+        }
     }
 
     // 关闭记录详情
     function closeRecordDetail() {
         var detailOverlay = document.querySelector('.detail-overlay');
-        if (detailOverlay) {
-            detailOverlay.remove();
+        var detailModal = document.querySelector('.detail-modal');
+        if (detailModal) {
+            detailModal.classList.remove('show');
+            setTimeout(function() {
+                if (detailOverlay) detailOverlay.remove();
+                document.body.style.overflow = '';
+            }, 250); // 动画时长要和CSS一致
+        } else {
+            if (detailOverlay) detailOverlay.remove();
+            document.body.style.overflow = '';
         }
     }
 
@@ -2465,9 +2490,10 @@
         sortedRecords.forEach(function(record, index) {
             if (index < 10) { // 只显示最近10条记录
                 content += '<div style="border-bottom: 1px solid #eee; padding: 10px 0; margin-bottom: 10px;">';
-                content += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">';
+                content += '<div style="display: flex; justify-content: flex-start; align-items: center; margin-bottom: 5px;">';
                 content += '<span style="font-weight: bold; color: #333;">' + record.date + ' ' + record.time + '</span>';
-                content += '<span style="font-size: 12px; color: #666;">#' + record.id + '</span>';
+                // 去除ID展示
+                // content += '<span style="font-size: 12px; color: #666;">#' + record.id + '</span>';
                 content += '</div>';
                 content += '<div style="color: #666; font-size: 14px; line-height: 1.4;">' + record.content + '</div>';
                 content += '<div style="font-size: 12px; color: #999; margin-top: 5px;">来源：' + record.phoneNumber + '</div>';
@@ -2601,6 +2627,7 @@
             max-height: 60vh;
         `;
         dialogBody.innerHTML = content;
+
         
         // 组装弹窗
         dialogContent.appendChild(dialogHeader);
@@ -2609,6 +2636,8 @@
         
         // 添加到页面
         document.body.appendChild(dialog);
+        // 禁止页面滚动，防止滑动穿透
+        document.body.style.overflow = 'hidden';
         
         // 点击背景关闭弹窗
         dialog.addEventListener('click', function(e) {
@@ -2622,8 +2651,11 @@
             if (dialog && dialog.parentNode) {
                 dialog.parentNode.removeChild(dialog);
             }
+            // 恢复页面滚动
+            document.body.style.overflow = '';
         };
     }
+
 
 </script>
 
