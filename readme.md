@@ -8,24 +8,24 @@
 
 
 
-##### 需添加自定义模块：
+##### 依赖的自定义模块：
 
-- moduleIflyVoice
-- moduleProcessAlive
-- pdfReader
-- moduleUHF
-- moduleNFC
-- OtherOffLineSpeakModule
-- moduleUHF_I6310
-- moduleNFC_2023
-- moduleNFC_ZBL
+- moduleIflyVoice					讯飞语音唤醒+识别
+- moduleProcessAlive 			进程守护保活
+- pdfReader			PDF查看和标注
+- moduleUHF  	   超高频RFID读写
+- moduleNFC 		NFC读块
+- OtherOffLineSpeakModule  	艾普的语音播报（云知声）
+- moduleUHF_I6310 		  别的PDA机器的RFID标签读写
+- moduleNFC_2023			NFC读块（android版本升级）	
+- moduleNFC_ZBL		NFC读块（功能再升级、读写均支持，以及多块、转码）	
 
-##### 需添加官方模块：
+##### 依赖的官方模块：
 
-- iflyRecognition
+- iflyRecognition			讯飞语音
 - IFlyVoice   (废弃)
-- smsListener
-- acc5Util
+- smsListener			短信监听
+- acc5Util					媒体音量控制
 
 
 
