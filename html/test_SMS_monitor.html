@@ -37,8 +37,12 @@
         
         /* 音量控制样式 */
         .volume-slider {width: 150px; accent-color: #ff0000;}
-        .volume-value {color: #ff0000; font-weight: bold;}
+        .volume-value {color: #ff0000; font-weight: bold; min-width: 40px; text-align: right; display: inline-block;}
         .current-volume-display {font-weight: bold; color: #007aff;}
+        
+        /* 防止音量显示抖动 */
+        .volume-item {margin: 5px 0; display: flex; align-items: center; gap: 10px; min-height: 30px;}
+        .volume-item span {font-weight: bold; color: #007aff; white-space: nowrap;}
         
         /* 其他样式 */
         .add-keyword-btn {margin-top: 10px;}
@@ -124,7 +128,7 @@
     <h1>交警短信提醒</h1>
     
     <div class="warning">
-        <strong>注意：</strong>需要给此应用开启最高权限，如读取短信、关闭电源优化策略等<br>
+        <strong>注意：</strong>需要开启最高权限，如读取短信、关闭电源优化策略等。本应用不会联网，请放心使用。<br>
     </div>
     
     <div class="settings">
@@ -196,7 +200,7 @@
         <button class="btn" onclick="clearLogs()">清空日志</button>
         <button class="btn" onclick="manualTestAlert()">手动测试警报</button>
         <!-- <button class="btn" onclick="stopAlert()">停止警报铃声</button> -->
-        <button class="btn" onclick="showStatistics()">查看统计</button>
+        <!-- <button class="btn" onclick="showStatistics()">查看统计</button> -->
     </div>
     
     <div id="logArea" class="log-area"></div>
@@ -222,15 +226,27 @@
     var alertRecords = []; // 警报记录数组
     var currentYear = new Date().getFullYear(); // 当前年份
 
+    // ========== 唯一实例ID和互斥锁 ===========
+    window.__SMS_MONITOR_INSTANCE_ID = window.__SMS_MONITOR_INSTANCE_ID || Date.now() + '-' + Math.floor(10000 + Math.random() * 90000);
+    window.__SMS_MONITOR_LOCK = window.__SMS_MONITOR_LOCK || false;
+
     apiready = function() {
-        // 初始化UI
-        initUI();
+        // 互斥锁判断，若已有实例则直接return
+        if (window.__SMS_MONITOR_LOCK) {
+            console.log('【SMS监听】已有实例在运行，本实例不再注册监听:', window.__SMS_MONITOR_INSTANCE_ID);
+            return;
+        }
+        window.__SMS_MONITOR_LOCK = true;
+        console.log('【SMS监听】实例启动:', window.__SMS_MONITOR_INSTANCE_ID);
         
         // 检查权限
         checkSMSPermission();
         
         // 尝试初始化短信监听模块
         initSMSListenerModule();
+
+        // 初始化UI
+        initUI();
 
         // 初始化acc5Util模块
         initAcc5Util();
@@ -262,6 +278,9 @@
                 // 恢复原始音量
                 restoreOriginalVolume();
             }
+            // 页面暂停时释放互斥锁
+            window.__SMS_MONITOR_LOCK = false;
+            console.log('【SMS监听】实例释放锁:', window.__SMS_MONITOR_INSTANCE_ID);
         });
     };
 
@@ -276,7 +295,6 @@
         if(savedListening === 'true') {
             smsSwitch.checked = true;
             statusText.textContent = '当前状态: 监听中';
-            isListening = true;
             // 启用相关区域
             enableSections();
             // 延迟启动监听，确保模块已初始化
@@ -536,10 +554,18 @@
             return;
         }
 
+        if (isListening) {
+            addLog('监听已启动，跳过重复注册', 'info');
+            return;
+        }
+
         try {
+             // 先注销，确保不会重复注册
+            smsListenerModule.unRegisterSmsListener();
+
             // 使用正确的API注册短信监听
             smsListenerModule.registerSmsListener(function(ret) {
-                addLog('收到短信: ' + JSON.stringify(ret), 'success');
+                // addLog('收到短信: ' + JSON.stringify(ret), 'success');
                 processSMS(ret);
             });
             
@@ -796,7 +822,7 @@
         processSMS(mockSMS);
         
         // 添加一些测试数据用于演示统计功能
-        addTestData();
+        // addTestData();
     }
     
     // 添加测试数据
@@ -908,21 +934,40 @@
             document.getElementById('alertVolumeValue').textContent = volumePercent.toFixed(0) + '%';
         }
         
-        // 监听音量滑块变化 - 实时更新显示
+        // 节流函数，减少频繁更新
+        var updateTimeout = null;
+        var lastUpdateTime = 0;
+        
+        // 监听音量滑块变化 - 使用节流减少更新频率
         document.getElementById('alertVolume').addEventListener('input', function(e) {
             var volumePercent = e.target.value;
-            document.getElementById('alertVolumeValue').textContent = volumePercent + '%';
+            var currentTime = Date.now();
             
-            // 保存音量设置
-            api.setPrefs({
-                key: 'alertVolume',
-                value: (volumePercent / 100).toString()
-            });
+            // 立即更新显示，但限制更新频率
+            if (currentTime - lastUpdateTime > 50) { // 50ms节流
+                document.getElementById('alertVolumeValue').textContent = volumePercent + '%';
+                lastUpdateTime = currentTime;
+            }
+            
+            // 清除之前的定时器
+            if (updateTimeout) {
+                clearTimeout(updateTimeout);
+            }
+            
+            // 延迟保存设置，避免频繁写入
+            updateTimeout = setTimeout(function() {
+                api.setPrefs({
+                    key: 'alertVolume',
+                    value: (volumePercent / 100).toString()
+                });
+            }, 200); // 200ms后保存
         });
         
         // 监听音量滑块拖动结束 - 只在拖动结束后打印日志
         document.getElementById('alertVolume').addEventListener('change', function(e) {
             var volumePercent = e.target.value;
+            // 确保最终值正确显示
+            document.getElementById('alertVolumeValue').textContent = volumePercent + '%';
             addLog('警报音量已设置为: ' + volumePercent + '%', 'success');
         });
     }
@@ -1194,6 +1239,15 @@
     
     // 记录警报事件
     function recordAlert(sms) {
+        // 10秒内同手机号+内容只记录一次
+        var now = Date.now();
+        var exists = alertRecords.some(function(r) {
+            return r.phoneNumber === sms.tel && r.content === sms.content && Math.abs(new Date(r.timestamp).getTime() - now) < 10000;
+        });
+        if (exists) {
+            addLog('该短信已处理，跳过重复', 'info');
+            return;
+        }
         var record = {
             id: Date.now(),
             timestamp: new Date().toISOString(),
