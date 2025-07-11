@@ -29,6 +29,14 @@
 
 
 
+##### 模块：
+
+![image-20250711154254594](https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/img/public_imgs/PicGo/202507111543634.png)
+
+![image-20250711154314201](https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/img/public_imgs/PicGo/202507111543880.png)
+
+
+
 ### 2 APP进去导航页
 
 <img src="https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/img/public_imgs/PicGo/202210091531913.jpg" alt="img" style="zoom: 50%;" />
