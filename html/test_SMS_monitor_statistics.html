@@ -2052,10 +2052,19 @@
         
         // 显示提示框
         tooltip.classList.add('show');
-        
+        // 滑动时自动隐藏tooltip
+        var hideTooltipOnMove = function() {
+            hideChartTooltip();
+            document.removeEventListener('touchmove', hideTooltipOnMove);
+            document.removeEventListener('scroll', hideTooltipOnMove);
+        };
+        document.addEventListener('touchmove', hideTooltipOnMove, { passive: true });
+        document.addEventListener('scroll', hideTooltipOnMove, { passive: true });
         // 4秒后自动隐藏
         setTimeout(function() {
             hideChartTooltip();
+            document.removeEventListener('touchmove', hideTooltipOnMove);
+            document.removeEventListener('scroll', hideTooltipOnMove);
         }, 4000);
     }
 
@@ -2063,11 +2072,6 @@
     function hideChartTooltip() {
         var tooltip = document.getElementById('chartTooltip');
         tooltip.classList.remove('show');
-        
-        // 移除选中状态
-        document.querySelectorAll('.chart-bar.selected').forEach(function(bar) {
-            bar.classList.remove('selected');
-        });
     }
 
     // 点击页面其他地方时隐藏提示框
@@ -2635,7 +2639,6 @@
             padding: 20px;
             box-sizing: border-box;
         `;
-        
         // 创建弹窗内容
         var dialogContent = document.createElement('div');
         dialogContent.style.cssText = `
@@ -2647,7 +2650,6 @@
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         `;
-        
         // 创建弹窗头部
         var dialogHeader = document.createElement('div');
         dialogHeader.style.cssText = `
@@ -2676,7 +2678,6 @@
                 transition: background 0.2s;
             " onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='transparent'">×</button>
         `;
-        
         // 创建弹窗主体
         var dialogBody = document.createElement('div');
         dialogBody.style.cssText = `
@@ -2685,25 +2686,48 @@
             max-height: 60vh;
         `;
         dialogBody.innerHTML = content;
-
-        
         // 组装弹窗
         dialogContent.appendChild(dialogHeader);
         dialogContent.appendChild(dialogBody);
         dialog.appendChild(dialogContent);
-        
+        // 防止内容区滚动穿透
+        let startY = 0;
+        dialogBody.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1) {
+                startY = e.touches[0].clientY;
+            }
+        }, { passive: false });
+        dialogBody.addEventListener('touchmove', function(e) {
+            if (e.touches.length !== 1) return;
+            const currentY = e.touches[0].clientY;
+            const scrollTop = dialogBody.scrollTop;
+            const scrollHeight = dialogBody.scrollHeight;
+            const offsetHeight = dialogBody.offsetHeight;
+            const isAtTop = scrollTop === 0;
+            const isAtBottom = scrollTop + offsetHeight >= scrollHeight - 1;
+            if ((isAtTop && currentY > startY) || (isAtBottom && currentY < startY)) {
+                // 只阻止冒泡，不阻止默认
+                e.stopPropagation();
+            }
+            // 其它情况不处理，让内容区正常滚动
+        }, { passive: false });
+        // 只在蒙层滑动时关闭弹窗，内容区滑动不关闭
+        var closeOnMove = function(e) {
+            if (!dialogContent.contains(e.target)) {
+                closeDetailDialog();
+            }
+        };
+        dialog.addEventListener('touchmove', closeOnMove, { passive: true });
         // 添加到页面
         document.body.appendChild(dialog);
         // 禁止页面滚动，防止滑动穿透
         document.body.style.overflow = 'hidden';
-        
         // 点击背景关闭弹窗
         dialog.addEventListener('click', function(e) {
             if (e.target === dialog) {
                 closeDetailDialog();
             }
         });
-        
         // 添加关闭函数到全局
         window.closeDetailDialog = function() {
             if (dialog && dialog.parentNode) {
@@ -2711,6 +2735,8 @@
             }
             // 恢复页面滚动
             document.body.style.overflow = '';
+            // 移除滑动监听
+            dialog.removeEventListener('touchmove', closeOnMove);
         };
     }
 
