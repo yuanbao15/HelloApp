@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
     <title>打赏捐赠</title>
+    <link rel="stylesheet" href="../css/api.css">
     <style>
         body {
             margin: 0;
@@ -83,13 +84,18 @@
     <div class="donate-tip">感谢您的支持！可长按保存收款码</div>
     <div class="donate-qrcodes">
         <div class="donate-item">
-            <img src="../image/yb_wechat_qrcode.jpg" alt="微信收款码" onclick="openFullImg(this.src)" oncontextmenu="saveDonateImg(this)" ontouchstart="donateImgTouchStart(event,this)" ontouchend="donateImgTouchEnd(event,this)">
+            <img src="../image/yb_wechat_qrcode.jpg" alt="微信收款码" oncontextmenu="saveDonateImg(this)" ontouchstart="donateImgTouchStart(event,this)" ontouchend="donateImgTouchEnd(event,this)">
             <div class="donate-label wechat">微信</div>
         </div>
         <div class="donate-item">
-            <img src="../image/yb_alipay_qrcode.jpg" alt="支付宝收款码" onclick="openFullImg(this.src)" oncontextmenu="saveDonateImg(this)" ontouchstart="donateImgTouchStart(event,this)" ontouchend="donateImgTouchEnd(event,this)">
+            <img src="../image/yb_alipay_qrcode.jpg" alt="支付宝收款码" oncontextmenu="saveDonateImg(this)" ontouchstart="donateImgTouchStart(event,this)" ontouchend="donateImgTouchEnd(event,this)">
             <div class="donate-label alipay">支付宝</div>
         </div>
+    </div>
+    <!-- 新增支付宝支付按钮 -->
+    <div style="text-align:center; margin:20px 0;">
+        <button class="btn btn-success" onclick="payByAlipay()">跳转支付宝支付</button>
+        <!-- <button class="btn btn-success" onclick="payByWechat()">跳转微信支付</button> -->
     </div>
     <button class="donate-close" onclick="closeDonatePage()">关闭</button>
 </div>
@@ -99,6 +105,7 @@
     var donateImgLongPressTimer = null;
 
     apiready = function() {
+
         // 监听返回键，捐赠页再返回才关闭 frame     --暂无效，不通过此方式实现返回
         if (window.api && api.addEventListener) {
             console.log("设置监听返回键");
@@ -107,6 +114,13 @@
                 goBackToSource();
             });
         }
+        // 绑定二维码图片点击事件
+        var imgs = document.querySelectorAll('.donate-item img');
+        imgs.forEach(function(img) {
+            img.onclick = function() {
+                openFullImg(this.src);
+            };
+        });
     }
 
     function donateImgTouchStart(e, img) {
@@ -134,58 +148,73 @@
     }
     // 全屏查看图片     -未实现左右切换、单击返回的效果，且返回键无效
     function openFullImg(src) {
-        console.log("查看图片：" + src);
-        // if (window.api) {
-        //     var images = [
-        //         '../image/yb_wechat_qrcode.jpg',
-        //         '../image/yb_alipay_qrcode.jpg'
-        //     ];
-        //     // 兼容 file:// 和 ../image/ 路径
-        //     var activeIndex = 0;
-        //     for (var i = 0; i < images.length; i++) {
-        //         if (src.indexOf('wechat') > -1 && images[i].indexOf('wechat') > -1) {
-        //             activeIndex = i;
-        //             break;
-        //         }
-        //         if (src.indexOf('alipay') > -1 && images[i].indexOf('alipay') > -1) {
-        //             activeIndex = i;
-        //             break;
-        //         }
-        //     }
-        //     console.log("查看图片：" + images[activeIndex]);
-        //     console.log("当前索引：" + activeIndex);
-        //     api.openPhotoBrowser({
-        //         images: images,
-        //         activeIndex: activeIndex,
-        //         bgColor: '#000',
-        //         tapClose: true,
-        //         enableGesture: true
-        //     }, function(ret, err) {
-        //         console.log("图片浏览器：" + JSON.stringify(ret));
-        //         if (ret && ret.eventType === 'click') {
-        //             console.log('点击了图片');
-        //             api.closePhotoBrowser();
-        //         } else if (ret && ret.eventType === 'longPress') {
-        //             console.log('长按了图片');
-        //             saveDonateImg({src: images[ret.index]});
-        //         } else if (ret && ret.eventType === 'back') {
-        //             console.log('返回操作');
-        //             api.closePhotoBrowser();
-        //         }
-        //     });
-        // } else {
-        //     // 兜底方案：直接新窗口打开
-        //     window.open(src, '_blank');
-        // }
+        if (window.api && api.require) {
+            var imgs = Array.from(document.querySelectorAll('.donate-item img'));
+            var images = imgs.map(function(img){ return getAbsolutePath(img.src); });
+            var absSrc = getAbsolutePath(src);
+            var activeIndex = images.indexOf(absSrc);
+            if (activeIndex === -1) activeIndex = 0;
+            var UIPhotoViewer = api.require('UIPhotoViewer');
+            UIPhotoViewer.open({
+                images: images,
+                placeholderImg: images[activeIndex],
+                bgColor: '#000',
+                activeIndex: activeIndex
+            }, function(ret, err) {
+                if (ret) {
+                    // 长按图片
+                    if (ret.eventType === 'longPress') {
+                        console.log("触发了长按图片事件");
+                        // 弹窗提示是否保存图片到本地，点击确认即可保存到本地
+                        api.confirm({
+                            title: '保存图片',
+                            msg: '是否将该图片保存到本地相册？',
+                            buttons: ['取消', '保存']
+                        }, function(res, err) {
+                            if (res && res.buttonIndex === 2) {
+                                // 用户点击“保存”
+                                api.saveMediaToAlbum({path: images[activeIndex]}, function(ret, err){
+                                    if(ret && ret.status){
+                                        api.toast({msg:'图片已保存到相册',duration:1500,location:'middle'});
+                                    }else{
+                                        api.toast({msg:'保存失败',duration:1500,location:'middle'});
+                                    }
+                                });
+                            }
+                        });
+                    }
+                    // 单击图片或返回
+                    if (ret.eventType === 'click' || ret.eventType === 'back') {
+                        // 关闭UIPhotoViewer并返回上个页面
+                        console.log("触发了单击图片或返回事件");
+                        UIPhotoViewer.close();
+                        // goBackToSource();
+                    }
+                }
+            });
+            return;
+        }
         window.open(src, '_blank');
     }
 
+    // 补充图片路径转绝对路径函数，兼容APICloud本地图片
+    function getAbsolutePath(src) {
+        if (/^(http|https|file|fs):\/\//.test(src)) {
+            return src;
+        }
+        // 兼容APICloud本地资源
+        if (window.api && api.fsDir) {
+            var fileName = src.split('/').pop();
+            return 'fs://image/' + fileName;
+        }
+        return src;
+    }
 
     // 返回到来源页面或关闭
     function goBackToSource() {
         if(window.api && api.pageParam && api.pageParam.fromPage){
             // 通知主窗口切换回来源页面
-            console
+            console.log("通知主窗口切换回来源页面：" + api.pageParam.fromPage);
             api.sendEvent({
                 name: 'donateBack',
                 extra: {fromPage: api.pageParam.fromPage}
@@ -204,6 +233,26 @@
         }else{
             window.close();
         }
+    }
+     // 支付宝H5支付跳转
+     function payByAlipay() {
+        // 替换为你的收款支付宝账号或收款链接
+        // 推荐使用官方收款链接格式：https://qr.alipay.com/fkxXXXXXX
+        // 自己的：https://qr.alipay.com/fkx11751gsuloosuwuc4qe9
+        // 或者使用转账协议格式
+        var alipayUrl = 'https://render.alipay.com/p/s/i/?scheme=alipays://platformapi/startapp?appId=20000067&url=https%3A%2F%2Fqr.alipay.com%2Ffkx11751gsuloosuwuc4qe9';
+        // 也可以直接用官方收款二维码链接
+        var alipayUrl = 'https://qr.alipay.com/fkx11751gsuloosuwuc4qe9';
+        // 也可以用转账协议（部分浏览器支持）：
+        // var alipayUrl = 'alipays://platformapi/startapp?appId=20000123&actionType=toAccount&goBack=NO&amount=5&userId=2088123456789012&memo=统计页支付';
+        window.open(alipayUrl, '_blank');
+    }
+
+    // 微信H5支付跳转   -暂未实现
+    function payByWechat() {
+        // 也可以直接用官方收款二维码链接
+        var payUrl = '';
+        window.open(payUrl, '_blank');
     }
 </script>
 </body>

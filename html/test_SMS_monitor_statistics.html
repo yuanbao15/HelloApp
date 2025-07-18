@@ -341,6 +341,10 @@
                     <button onclick="goBack()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
                 </div>
             </div>
+            <!-- 新增支付宝支付按钮 -->
+            <div style="text-align:center;margin:20px 0;">
+                <button class="btn btn-success" onclick="payByAlipay()">支付宝支付5元</button>
+            </div>
             
             <div class="stats-content" style="padding: 15px;">
                 <div class="stats-summary" style="background: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
@@ -2740,6 +2744,46 @@
         };
     }
 
+    // 支付宝H5支付跳转
+    function payByAlipay() {
+        // 希望增加支付后回调自定义方法
+        const paymentId = 'pay_' + Date.now();
+  
+        // 存储本次支付ID
+        localStorage.setItem('currentPaymentId', paymentId);
+        
+        // 支付宝URL（支付完成后跳转回你的页面）
+        const returnUrl = encodeURIComponent(
+            window.location.href.split('?')[0] + `?paymentId=${paymentId}&fromAlipay=true`
+        );
+
+
+
+        // 真实支付宝转账协议，5元，userId请替换为你的收款方支付宝UID
+        var alipayUrl = 'alipays://platformapi/startapp?appId=20000123&actionType=toAccount&goBack=NO&amount=0.01&userId=2088602275251853&memo=统计页支付&returnUrl=${returnUrl}';
+        // H5环境下推荐用render跳转
+        var h5Url = 'https://render.alipay.com/p/s/i/?scheme=' + encodeURIComponent(alipayUrl);
+        window.open(h5Url, '_blank');
+    }
+
+    // 页面加载时检查是否从支付宝返回
+    function checkPaymentResult() {
+        const params = new URLSearchParams(window.location.search);
+        
+        if (params.get('fromAlipay') === 'true') {
+            const paymentId = params.get('paymentId');
+            const storedId = localStorage.getItem('currentPaymentId');
+            
+            if (paymentId && paymentId === storedId) {
+                localStorage.removeItem('currentPaymentId');
+                alert('支付已完成（实际状态需用户确认）');
+                // 这里执行你的回调逻辑
+            }
+        }
+    }
+
+    // 初始化检查
+    checkPaymentResult();
 
 </script>
 

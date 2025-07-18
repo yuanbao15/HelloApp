@@ -25,7 +25,8 @@
 - iflyRecognition			讯飞语音
 - IFlyVoice   (废弃)
 - smsListener			短信监听
-- acc5Util					媒体音量控制
+- acc5Util				媒体音量控制
+- UIPhotoViewer         图片查看
 
 
 
