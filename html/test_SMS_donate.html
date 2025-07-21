@@ -76,6 +76,14 @@
             font-size: 15px;
             cursor: pointer;
         }
+
+        .btn {padding: 10px 10px; margin: 5px; background: #007aff; color: white; border: none; border-radius: 5px; cursor: pointer;}
+        .btn:disabled {background: #ccc; cursor: not-allowed; opacity: 0.6;}
+        .btn:enabled:hover {background: #0056cc;}
+        .btn-danger {background: #ff4444;}
+        .btn-danger:hover {background: #cc0000;}
+        .btn-success {background: #44aa44;}
+        .btn-success:hover {background: #338833;}
     </style>
 </head>
 <body>
@@ -95,6 +103,7 @@
     <!-- 新增支付宝支付按钮 -->
     <div style="text-align:center; margin:20px 0;">
         <button class="btn btn-success" onclick="payByAlipay()">跳转支付宝支付</button>
+        <!-- <button class="btn btn-success" onclick="payByAlipay2()">W2-跳转支付宝支付</button> -->
         <!-- <button class="btn btn-success" onclick="payByWechat()">跳转微信支付</button> -->
     </div>
     <button class="donate-close" onclick="closeDonatePage()">关闭</button>
@@ -106,14 +115,24 @@
 
     apiready = function() {
 
-        // 监听返回键，捐赠页再返回才关闭 frame     --暂无效，不通过此方式实现返回
+        // 监听返回键，捐赠页再返回才关闭 frame
         if (window.api && api.addEventListener) {
             console.log("设置监听返回键");
             api.addEventListener({name: 'keyback'}, function(ret, err){
                 console.log("返回键监听被触发：" + JSON.stringify(ret));
                 goBackToSource();
             });
+
+            // 新增：监听从支付窗口发来的成功事件
+            api.addEventListener({
+                name: 'paymentSuccess'
+            }, function(ret, err) {
+                // 这里是支付成功后的自定义回调逻辑
+                api.toast({ msg: '支付已完成，感谢您的支持！' });
+                // 在这里可以写真正的回调业务，比如刷新页面
+            });
         }
+        
         // 绑定二维码图片点击事件
         var imgs = document.querySelectorAll('.donate-item img');
         imgs.forEach(function(img) {
@@ -121,12 +140,32 @@
                 openFullImg(this.src);
             };
         });
+
+        // 【重要】页面加载时，检查是否从支付宝回调
+        checkAlipayCallback();
     }
 
     function donateImgTouchStart(e, img) {
         donateImgLongPressTimer = setTimeout(function() {
             saveDonateImg(img);
         }, 700);
+
+        // 另一种方式直接触发跳转处理：
+        // // H5环境下推荐用render跳转
+        // var h5Url = 'https://render.alipay.com/p/s/i/?scheme=' + encodeURIComponent(alipayUrl);
+        // console.log("h5Url:", h5Url);
+
+        // if (!window.api) {
+        //     alert('请在APP环境中使用');
+        //     window.open(h5Url, '_blank');
+        //     return;
+        // }
+        // // 【重要】改用 api.openWin 在新窗口打开，而不是在当前页面跳转
+        // api.openWin({
+        //     name: 'alipay_window_' + Date.now(),
+        //     url: h5Url,
+        //     bgColor: '#ffffff'
+        // });
     }
     function donateImgTouchEnd(e, img) {
         if(donateImgLongPressTimer) clearTimeout(donateImgLongPressTimer);
@@ -223,6 +262,8 @@
                 closeDonatePage();
             }, 100);
         }else{
+            console.log("触发了返回：goBackToSource" );
+            // 【重要】简化这里的逻辑，直接关闭页面
             closeDonatePage();
         }
     }
@@ -240,12 +281,15 @@
         // 推荐使用官方收款链接格式：https://qr.alipay.com/fkxXXXXXX
         // 自己的：https://qr.alipay.com/fkx11751gsuloosuwuc4qe9
         // 或者使用转账协议格式
-        var alipayUrl = 'https://render.alipay.com/p/s/i/?scheme=alipays://platformapi/startapp?appId=20000067&url=https%3A%2F%2Fqr.alipay.com%2Ffkx11751gsuloosuwuc4qe9';
+        // var alipayUrl = 'https://render.alipay.com/p/s/i/?scheme=alipays://platformapi/startapp?appId=20000067&url=https%3A%2F%2Fqr.alipay.com%2Ffkx11751gsuloosuwuc4qe9';
         // 也可以直接用官方收款二维码链接
         var alipayUrl = 'https://qr.alipay.com/fkx11751gsuloosuwuc4qe9';
         // 也可以用转账协议（部分浏览器支持）：
         // var alipayUrl = 'alipays://platformapi/startapp?appId=20000123&actionType=toAccount&goBack=NO&amount=5&userId=2088123456789012&memo=统计页支付';
-        window.open(alipayUrl, '_blank');
+        api.openWin({
+            name: 'alipay_win_1',
+            url: alipayUrl
+        });
     }
 
     // 微信H5支付跳转   -暂未实现
@@ -254,6 +298,62 @@
         var payUrl = '';
         window.open(payUrl, '_blank');
     }
+
+
+    // 支付宝第二种的方式-转账协议
+    // 支付宝H5支付跳转
+    function payByAlipay2() {
+        // 希望增加支付后回调自定义方法
+        const paymentId = 'pay_' + Date.now();
+  
+        // 存储本次支付ID
+        localStorage.setItem('currentPaymentId', paymentId);
+        
+        // 支付宝返回URL（支付完成后跳转回你的页面）
+        const returnUrl = encodeURIComponent(
+            // 这里需要指向你的捐赠页面本身，以便它能执行回调检查逻辑
+            '../html/test_SMS_donate.html' + `?paymentId=${paymentId}&fromAlipay=true`
+        );
+        console.log("paymentId", paymentId);
+        console.log("returnUrl", returnUrl);
+
+        // 真实支付宝转账协议，2元，userId请替换为你的收款方支付宝UID
+        const alipayUserId = '2088602275251853';
+        var alipayUrl = `alipays://platformapi/startapp?appId=20000123&actionType=toAccount&goBack=NO&amount=5&userId=${alipayUserId}&memo=SMS打赏捐赠&returnUrl=${returnUrl}`;
+        // H5环境下推荐用render跳转
+        var h5Url = 'https://render.alipay.com/p/s/i/?scheme=' + encodeURIComponent(alipayUrl);
+        console.log("h5Url:", h5Url);
+        // 【重要】改用 api.openWin 在新窗口打开。确保返回时能正常关闭窗口
+        api.openWin({
+            name: 'alipay_window_' + Date.now(),
+            url: h5Url,
+            bgColor: '#ffffff'
+        });
+    }
+
+     // 页面加载时检测是否从支付宝回跳
+     function checkAlipayCallback() {
+        console.log("初始化检测结果")
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('fromAlipay') === 'true') {
+            const paymentId = params.get('paymentId');
+            const storedId = localStorage.getItem('currentPaymentId');
+            if (paymentId && paymentId === storedId) {
+                localStorage.removeItem('currentPaymentId');
+
+                // 检测到回调，说明当前是在支付成功后打开的新页面
+                // 发送成功事件给原来的页面
+                if (window.api) {
+                    api.sendEvent({ name: 'paymentSuccess' });
+                    // 延时一点关闭，确保事件发送成功
+                    setTimeout(function() {
+                        api.closeWin();
+                    }, 200);
+                }
+            }
+        }
+    }
+
 </script>
 </body>
 </html> 
