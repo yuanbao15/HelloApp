@@ -136,7 +136,24 @@
         </div>
     </div>
 
-
+    <div id='title'>6.testNFC_2025重汽项目-带串口-ISO14443A</div>
+    <div class="aui-content-padded" >
+        <div class="aui-form">
+            <div class="aui-input-row ">
+                <i class="aui-input-addon aui-iconfont aui-icon-people"></i>
+                <div><input type="text" class="aui-input" id="nfc_2025_text" placeholder="对NFC芯片进行读写的内容"/><div>
+                <form> 值类型：
+                    <input type="radio" name="radioNFCZhxx" value="0" checked> 16进制
+                    <input type="radio" name="radioNFCZhxx" value="1"> UTF8
+                </form>
+            </div>
+            <div class="aui-btn-row">
+                <p><div class="aui-btn aui-btn-success aui-btn-block" onclick="readUHF_ZHXX_2025()" >yb-测试高频NFC2025-读字符串</div></p>
+                <p><div class="aui-btn aui-btn-success aui-btn-block" onclick="writeUHF_ZHXX_2025()" >yb-测试高频NFC2025-写字符串</div></p>
+                <p><div class="aui-btn aui-btn-success aui-btn-block" onclick="readEPC_ZHXX_2025()" >yb-测试高频NFC2025-获取EPC标签号</div></p>
+            </div>
+        </div>
+    </div>
 </body>
 <script type="text/javascript" src="../script/api.js"></script>
 <script type="text/javascript" src="../script/jquery-1.8.2.min.js"></script>
@@ -150,6 +167,7 @@
     var moduleUHF_I6310 = null;
     var moduleNFC_2023 = null;
     var moduleNFC_ZBL = null;
+    var moduleUHF_ZHXX_2025 = null;
     apiready = function(){
         moduleUHF = api.require('moduleUHF');
         moduleNFC = api.require('moduleNFC');
@@ -157,6 +175,7 @@
         moduleUHF_I6310 = api.require('moduleUHF_I6310');
         moduleNFC_2023 = api.require('moduleNFC_2023');
         moduleNFC_ZBL = api.require('moduleNFC_ZBL');
+        moduleUHF_ZHXX_2025 = api.require('moduleUHF_ZHXX_2025');
     }
 
     // UHF_I6310
@@ -398,6 +417,108 @@
                 <!--                    alert(JSON.stringify(ret));-->
             } else {
                 <!--                    alert(JSON.stringify(err));-->
+            }
+        });
+    }
+
+
+    // moduleUHF_ZHXX_2025模块的读操作，直接读标签的文本信息
+    function readUHF_ZHXX_2025(){
+        console.log("开始读取！");
+        // 获取值类型的radio设置的值
+        var dataType = $('input[name="radioNFCZhxx"]:checked').val();
+
+        var params = {
+            dataType: dataType,
+        };
+        moduleUHF_ZHXX_2025.readUHF(params, function(ret, err){
+            if (ret) {
+                console.log("读取完成！" + JSON.stringify(ret));
+                if (ret.flag == "yes") {
+                    api.toast({
+                        msg: "读取成功：" + JSON.stringify(ret),
+                        duration: 3000,
+                        location: 'middle'
+                    });
+                } else {
+                    api.toast({
+                        msg: "读取失败！" + JSON.stringify(ret),
+                        duration: 3000,
+                        location: 'middle'
+                    });
+                }
+                $("#nfc_2025_text").val(ret.info);
+            } else {
+                api.toast({
+                    msg: "读取失败！" + JSON.stringify(err),
+                    duration: 3000,
+                    location: 'middle'
+                });
+            }
+        });
+    }
+    // moduleUHF_ZHXX_2025模块的写操作，直接写标签的文本信息
+    function writeUHF_ZHXX_2025(){
+        let text = $("#nfc_2025_text").val();
+        // 获取值类型的radio设置的值
+        var dataType = $('input[name="radioNFCZhxx"]:checked').val();
+
+        var params = {
+            str : text,
+            dataType: dataType,
+        };
+        moduleUHF_ZHXX_2025.writeUHF(params, function(ret, err){
+            if (ret) {
+                console.log("写入完成！" + JSON.stringify(ret));
+                if (ret.flag == "yes") {
+                    api.toast({
+                        msg: "写入成功：" + JSON.stringify(ret),
+                        duration: 3000,
+                        location: 'middle'
+                    });
+                } else {
+                    api.toast({
+                        msg: "读取失败！" + JSON.stringify(ret),
+                        duration: 3000,
+                        location: 'middle'
+                    });
+                }
+            } else {
+                api.toast({
+                    msg: "写入失败！" + JSON.stringify(err),
+                    duration: 3000,
+                    location: 'middle'
+                });
+            }
+        });
+    }
+
+    // moduleUHF_ZHXX_2025模块的读取序列号操作
+    function readEPC_ZHXX_2025(){
+        var params = {
+        };
+        moduleUHF_ZHXX_2025.readEPC(params, function(ret, err){
+            if (ret) {
+                console.log("读取完成！" + JSON.stringify(ret));
+                if (ret.flag == "yes") {
+                    api.toast({
+                        msg: "读取序列号成功：" + ret.epc,
+                        duration: 3000,
+                        location: 'middle'
+                    });
+                } else {
+                    api.toast({
+                        msg: "读取失败！" + JSON.stringify(ret),
+                        duration: 3000,
+                        location: 'middle'
+                    });
+                }
+            } else {
+                api.toast({
+                    msg: "读取失败！" + JSON.stringify(err),
+                    duration: 3000,
+                    location: 'middle'
+                });
             }
         });
     }
