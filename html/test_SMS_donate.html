@@ -201,6 +201,7 @@
                 activeIndex: activeIndex
             }, function(ret, err) {
                 if (ret) {
+                    console.log(JSON.stringify(ret))
                     // 长按图片
                     if (ret.eventType === 'longPress') {
                         console.log("触发了长按图片事件");

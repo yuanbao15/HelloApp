@@ -358,8 +358,8 @@
                             <div style="font-size: 24px; font-weight: bold; color: #44aa44;" id="maxMonth">0</div>
                             <div style="font-size: 12px; color: #666;">最高月次数</div>
                         </div>
-                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                            <div style="font-size: 24px; font-weight: bold; color: #ff8800;" id="lastAlert">-</div>
+                        <div class="grid-item" style="text-align: center; padding: 8px 5px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 24px; font-weight: bold; color: #ff8800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="lastAlert">-</div>
                             <div style="font-size: 12px; color: #666;">最近警报</div>
                         </div>
                     </div>
@@ -533,55 +533,80 @@
     };
 
     // 初始化mescroll
-    function initMescroll() {
-        mescroll = new MeScroll("mescroll", {
-            isBounce: true, // 允许弹性滚动
-            down: {
-                auto: false, // 禁用自动下拉刷新
-                callback: function() {
-                    // 只在mescroll容器顶部才刷新
-                    var scrollTop = document.getElementById('mescroll').scrollTop;
-                    if (scrollTop <= 0) {
-                        refreshDataOnly();
-                    } else {
+        function initMescroll() {
+            mescroll = new MeScroll("mescroll", {
+                isBounce: true, // 允许弹性滚动
+                down: {
+                    auto: false, // 禁用自动下拉刷新
+                    callback: function() {
+                        // 只在mescroll容器顶部才刷新
+                        var scrollTop = document.getElementById('mescroll').scrollTop;
+                        if (scrollTop <= 0) {
+                            // 显示刷新中状态
+                            var downwarpContent = document.querySelector('.mescroll-downwarp .downwarp-content');
+                            if (downwarpContent) {
+                                downwarpContent.innerHTML = '<div class="downwarp-progress"></div><div class="downwarp-tip">正在刷新数据...</div>';
+                            }
+                            refreshDataOnly();
+                        } else {
+                            mescroll.endSuccess();
+                        }
+                    },
+                    // 初始内容为空
+                    htmlContent: '<div class="downwarp-content"></div>',
+                    offset: 60,
+                    // 当下拉到offset范围内时触发
+                    inOffset: function() {
+                        var downwarpContent = document.querySelector('.mescroll-downwarp .downwarp-content');
+                        if (downwarpContent) {
+                            downwarpContent.innerHTML = '<div class="downwarp-progress"></div><div class="downwarp-tip">下拉刷新</div>';
+                        }
+                    },
+                    // 当下拉超过offset范围时触发
+                    outOffset: function() {
+                        var downwarpContent = document.querySelector('.mescroll-downwarp .downwarp-content');
+                        if (downwarpContent) {
+                            downwarpContent.innerHTML = '<div class="downwarp-progress"></div><div class="downwarp-tip">释放刷新</div>';
+                        }
+                    },
+                    threshold: 50
+                },
+                up: {
+                    auto: false,
+                    callback: function() {
                         mescroll.endSuccess();
-                    }
-                },
-                htmlContent: '<div class="downwarp-content"><div class="downwarp-progress"></div><div class="downwarp-tip">正在刷新数据...</div></div>',
-                // htmlContent: '<div class="downwarp-content"><div class="downwarp-progress"></div><div class="downwarp-tip"></div></div>',
-                offset: 60,
-                textInOffset: '下拉刷新',
-                textOutOffset: '释放刷新',
-                textLoading: '正在刷新...',
-                threshold: 50
-            },
-            up: {
-                auto: false,
-                callback: function() {
-                    mescroll.endSuccess();
-                },
-                page: {
-                    num: 0,
-                    size: 10,
-                    time: Date.now()
-                },
-                htmlNodata: '已经到底了~',
-                htmlLoading: '',
-                htmlError: ''
-            }
-        });
+                    },
+                    page: {
+                        num: 0,
+                        size: 10,
+                        time: Date.now()
+                    },
+                    htmlNodata: '已经到底了~',
+                    htmlLoading: '',
+                    htmlError: ''
+                }
+            });
 
-        // // mescroll初始化后，强制隐藏下拉刷新区域，防止初始化时显示在顶部
-        // var downwarp = document.querySelector('.mescroll-downwarp');
-        // // 先隐藏下拉刷新区域，防止初始化时显示在顶部
-        // if (downwarp) {
-        //     downwarp.style.display = 'none';
-        //     // 监听下拉动作，开始下拉时再显示
-        //     document.getElementById('mescroll').addEventListener('touchstart', function() {
-        //         downwarp.style.display = 'block';
-        //     }, { once: true });
-        // }
-    }
+            // 初始化后，强制隐藏下拉刷新区域
+            var downwarp = document.querySelector('.mescroll-downwarp');
+            if (downwarp) {
+                downwarp.style.visibility = 'hidden';
+                downwarp.style.opacity = '0';
+                downwarp.style.transition = 'visibility 0s, opacity 0.3s ease';
+            }
+
+            // 添加滚动监听，控制下拉刷新区域的显示
+            var mescrollEl = document.getElementById('mescroll');
+            mescrollEl.addEventListener('scroll', function() {
+                if (mescrollEl.scrollTop <= 0 && downwarp) {
+                    downwarp.style.visibility = 'visible';
+                    downwarp.style.opacity = '1';
+                } else if (downwarp && !mescroll.isDownLoading) {
+                    downwarp.style.visibility = 'hidden';
+                    downwarp.style.opacity = '0';
+                }
+            });
+        }
     
     // 返回上一页
     function goBack() {
@@ -741,7 +766,13 @@
             } else if (diffDays < 7) {
                 lastAlert = diffDays + '天前';
             } else {
-                lastAlert = lastRecord.date;
+                // 只显示月和日，不显示年份
+                var dateParts = lastRecord.date.split('-');
+                if (dateParts.length === 3) {
+                    lastAlert = dateParts[1] + '-' + dateParts[2];
+                } else {
+                    lastAlert = lastRecord.date;
+                }
             }
         }
         
@@ -1926,7 +1957,13 @@
             } else if (diffDays < 7) {
                 lastAlert = diffDays + '天前';
             } else {
-                lastAlert = lastRecord.date;
+                // 只显示月和日，不显示年份
+                var dateParts = lastRecord.date.split('-');
+                if (dateParts.length === 3) {
+                    lastAlert = dateParts[1] + '-' + dateParts[2];
+                } else {
+                    lastAlert = lastRecord.date;
+                }
             }
         }
         
@@ -2743,4 +2780,4 @@
 </script>
 
 </body>
-</html> 
+</html>
