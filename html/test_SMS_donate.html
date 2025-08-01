@@ -112,16 +112,18 @@
 <script>
     // 长按保存图片（移动端）
     var donateImgLongPressTimer = null;
+    var isImageViewing = false; // 是否图片查看模式
+    var UIPhotoViewer = null;
 
     apiready = function() {
 
         // 监听返回键，捐赠页再返回才关闭 frame
         if (window.api && api.addEventListener) {
-            console.log("设置监听返回键");
-            api.addEventListener({name: 'keyback'}, function(ret, err){
-                console.log("返回键监听被触发：" + JSON.stringify(ret));
-                goBackToSource();
-            });
+            // console.log("设置监听返回键");
+            // api.addEventListener({name: 'keyback'}, function(ret, err){
+            //     console.log("返回键监听被触发：" + JSON.stringify(ret));
+            //     goBackToSource();
+            // });
 
             // 新增：监听从支付窗口发来的成功事件
             api.addEventListener({
@@ -143,6 +145,8 @@
 
         // 【重要】页面加载时，检查是否从支付宝回调
         checkAlipayCallback();
+
+        UIPhotoViewer = api.require('UIPhotoViewer'); // 图片模块初始化
     }
 
     function donateImgTouchStart(e, img) {
@@ -193,13 +197,14 @@
             var absSrc = getAbsolutePath(src);
             var activeIndex = images.indexOf(absSrc);
             if (activeIndex === -1) activeIndex = 0;
-            var UIPhotoViewer = api.require('UIPhotoViewer');
+            
             UIPhotoViewer.open({
                 images: images,
                 placeholderImg: images[activeIndex],
                 bgColor: '#000',
                 activeIndex: activeIndex
             }, function(ret, err) {
+                isImageViewing = true; // 标记图片查看中
                 if (ret) {
                     console.log(JSON.stringify(ret))
                     // 长按图片
@@ -227,8 +232,8 @@
                     if (ret.eventType === 'click' || ret.eventType === 'back') {
                         // 关闭UIPhotoViewer并返回上个页面
                         console.log("触发了单击图片或返回事件");
+                        isImageViewing = false; // 标记图片浏览结束
                         UIPhotoViewer.close();
-                        // goBackToSource();
                     }
                 }
             });
@@ -250,7 +255,7 @@
         return src;
     }
 
-    // 返回到来源页面或关闭
+    // 返回到来源页面或关闭     -作废
     function goBackToSource() {
         if(window.api && api.pageParam && api.pageParam.fromPage){
             // 通知主窗口切换回来源页面
@@ -268,6 +273,22 @@
             closeDonatePage();
         }
     }
+
+    function goBack() {
+        console.log('返回键被触发，当前图片查看状态：', isImageViewing);
+        
+        // 如果处于多选模式，先退出多选模式
+        if (isImageViewing) {
+            console.log('退出图片查看');
+            UIPhotoViewer.close();
+            isImageViewing = false; // 标记为非查看图片状态
+        } else {
+            console.log('关闭捐赠页面，回到上级页面');
+            // 非图片查看状态，直接关闭frame
+            closeDonatePage();
+        }
+    }
+
     // 关闭页面
     function closeDonatePage() {
         if(window.api && api.closeFrame){
