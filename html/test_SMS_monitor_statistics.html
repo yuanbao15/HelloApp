@@ -681,7 +681,7 @@
     
     // 将函数暴露到全局作用域，确保能被外部调用
     window.refreshStatisticsData = refreshStatisticsData;
-    window.goBack = goBack;
+    window.goBack = goBack; // 生效中，作返回
     window.refreshDataOnly = refreshDataOnly;
     
     // 只刷新数据，保持当前年份选择
@@ -1315,7 +1315,7 @@
         }, 300);
     }
 
-    // 生成详细记录列表
+    // 底部-生成详细记录列表
     function generateRecordsList() {
         var recordsList = document.getElementById('recordsList');
         var recordsHTML = '';
@@ -1515,7 +1515,7 @@
 
         // 防止滑动穿透
         document.body.style.overflow = 'hidden';
-
+        
         // 添加淡入动画
         var detailModal = document.querySelector('.detail-modal');
         if (detailModal) {
@@ -1524,12 +1524,45 @@
                 detailModal.classList.add('show');
             }, 10);
         }
+        
+        // 增强滑动穿透防护：阻止背景页面滚动
+        function preventBackgroundScroll(e) {
+            e.preventDefault();
+        }
+        document.addEventListener('touchmove', preventBackgroundScroll, { passive: false });
+        
+        // 实现点击弹窗外部区域关闭弹窗
+        var detailOverlay = document.querySelector('.detail-overlay');
+        var detailModal = document.querySelector('.detail-modal');
+        if (detailOverlay && detailModal) {
+            // 使用setTimeout确保弹窗完全渲染后再绑定事件
+            setTimeout(function() {
+                detailOverlay.addEventListener('click', function(e) {
+                    // 检查点击目标是否是覆盖层本身，而不是弹窗内容
+                    if (e.target === detailOverlay) {
+                        closeRecordDetail();
+                    }
+                });
+            }, 100);
+        }
+        
+        // 保存事件引用以便后续移除
+        window.detailEventListeners = {
+            preventBackgroundScroll: preventBackgroundScroll
+        };
     }
 
     // 关闭记录详情
     function closeRecordDetail() {
         var detailOverlay = document.querySelector('.detail-overlay');
         var detailModal = document.querySelector('.detail-modal');
+        
+        // 移除滑动穿透防护
+        if (window.detailEventListeners && window.detailEventListeners.preventBackgroundScroll) {
+            document.removeEventListener('touchmove', window.detailEventListeners.preventBackgroundScroll);
+            window.detailEventListeners = null;
+        }
+        
         if (detailModal) {
             detailModal.classList.remove('show');
             setTimeout(function() {
@@ -1662,14 +1695,19 @@
 
     // 处理记录点击
     function handleRecordClick(recordId) {
-        // 检查是否在滑动状态
+        // 检查是否在滑动状态或记录项正在滑动中
         if (isSwipeInProgress) {
             return; // 如果正在滑动，不触发点击事件
         }
         
         var recordItem = document.querySelector(`[data-record-id="${recordId}"]`);
-        if (recordItem && recordItem.classList.contains('swiped')) {
-            return; // 如果已滑动显示删除按钮，不触发点击事件
+        if (!recordItem) {
+            return;
+        }
+        
+        // 如果记录项正在滑动中或已滑动显示删除按钮，不触发点击事件
+        if (recordItem.classList.contains('swiping') || recordItem.classList.contains('swiped')) {
+            return;
         }
         
         if (isMultiSelectMode) {
@@ -2268,14 +2306,26 @@
         if (deltaX < -swipeThreshold) {
             // 先重置其他项的滑动状态，确保只有当前项显示删除按钮
             resetOtherSwipeStates(recordId);
-            recordItem.classList.add('swiped');
+            // 使用transform实现平滑过渡到显示删除按钮的位置
+            recordItem.style.transform = 'translateX(-80px)';
+            // 添加延迟以确保过渡动画完成后再添加swiped类
+            setTimeout(function() {
+                recordItem.classList.add('swiped');
+            }, 300);
         } else {
-            recordItem.classList.remove('swiped');
-            recordItem.style.transform = '';
+            // 平滑过渡回原始位置
+            recordItem.style.transform = 'translateX(0)';
+            // 添加延迟以确保过渡动画完成后再移除swiped类
+            setTimeout(function() {
+                recordItem.classList.remove('swiped');
+            }, 300);
         }
         
         recordItem.setAttribute('data-is-touching', 'false');
-        isSwipeInProgress = false; // 重置滑动状态
+        // 延迟重置滑动状态，确保动画完成
+        setTimeout(function() {
+            isSwipeInProgress = false; // 重置滑动状态
+        }, 300);
         
         // 同时触发长按结束逻辑
         handleMouseUp(event, recordId);
@@ -2373,10 +2423,19 @@
         if (deltaX < -swipeThreshold) {
             // 先重置其他项的滑动状态，确保只有当前项显示删除按钮
             resetOtherSwipeStates(recordId);
-            recordItem.classList.add('swiped');
+            // 使用transform实现平滑过渡到显示删除按钮的位置
+            recordItem.style.transform = 'translateX(-80px)';
+            // 添加延迟以确保过渡动画完成后再添加swiped类
+            setTimeout(function() {
+                recordItem.classList.add('swiped');
+            }, 300);
         } else {
-            recordItem.classList.remove('swiped');
-            recordItem.style.transform = '';
+            // 平滑过渡回原始位置
+            recordItem.style.transform = 'translateX(0)';
+            // 添加延迟以确保过渡动画完成后再移除swiped类
+            setTimeout(function() {
+                recordItem.classList.remove('swiped');
+            }, 300);
         }
         
         recordItem.setAttribute('data-is-mousing', 'false');
@@ -2396,7 +2455,10 @@
             recordItem.classList.remove('swiped');
             recordItem.style.transform = '';
             recordItem.setAttribute('data-is-mousing', 'false');
-            isSwipeInProgress = false; // 重置滑动状态
+            // 延迟重置滑动状态，确保动画完成
+            setTimeout(function() {
+                isSwipeInProgress = false; // 重置滑动状态
+            }, 300);
         }
     }
 
@@ -2702,7 +2764,7 @@
         return content;
     }
     
-    // 显示详情弹窗
+    // 行为模式框的显示详情弹窗
     function showDetailDialog(title, content) {
         // 创建弹窗容器
         var dialog = document.createElement('div');
@@ -2773,9 +2835,11 @@
         dialog.appendChild(dialogContent);
         // 防止内容区滚动穿透
         let startY = 0;
+        let startScrollTop = 0;
         dialogBody.addEventListener('touchstart', function(e) {
             if (e.touches.length === 1) {
                 startY = e.touches[0].clientY;
+                startScrollTop = dialogBody.scrollTop;
             }
         }, { passive: false });
         dialogBody.addEventListener('touchmove', function(e) {
@@ -2786,12 +2850,25 @@
             const offsetHeight = dialogBody.offsetHeight;
             const isAtTop = scrollTop === 0;
             const isAtBottom = scrollTop + offsetHeight >= scrollHeight - 1;
-            if ((isAtTop && currentY > startY) || (isAtBottom && currentY < startY)) {
-                // 只阻止冒泡，不阻止默认
+            const deltaY = currentY - startY;
+            
+            // 优化滑动穿透处理
+            if ((isAtTop && deltaY > 0) || (isAtBottom && deltaY < 0)) {
+                // 当在顶部向上滑动或底部向下滑动时，阻止默认行为
+                e.preventDefault();
+                e.stopPropagation();
+            } else if (scrollTop !== startScrollTop) {
+                // 如果内容正在滚动，阻止事件传播到背景
                 e.stopPropagation();
             }
-            // 其它情况不处理，让内容区正常滚动
         }, { passive: false });
+        
+        // 防止背景页面滚动
+        function preventBackgroundScroll(e) {
+            e.preventDefault();
+        }
+        document.addEventListener('touchmove', preventBackgroundScroll, { passive: false });
+        
         // 只在蒙层滑动时关闭弹窗，内容区滑动不关闭
         var closeOnMove = function(e) {
             if (!dialogContent.contains(e.target)) {
@@ -2818,6 +2895,8 @@
             document.body.style.overflow = '';
             // 移除滑动监听
             dialog.removeEventListener('touchmove', closeOnMove);
+            // 移除背景滚动阻止
+            document.removeEventListener('touchmove', preventBackgroundScroll);
         };
     }
 
