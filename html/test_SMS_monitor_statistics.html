@@ -456,23 +456,9 @@
                     <button class="btn btn-danger" onclick="clearStatistics()" style="flex: 1;">清空记录</button>
                 </div>
                 
-                <div id="multiSelectActions" style="display: none; margin-bottom: 20px;">
-                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                        <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
-                        <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
-                        <button class="btn btn-danger" onclick="deleteSelectedRecords()" style="flex: 1;">删除选中</button>
-                    </div>
-                    <div style="text-align: center; color: #666; font-size: 12px;">
-                        已选择 <span id="selectedCount">0</span> 条记录
-                    </div>
-                    <div style="text-align: center; color: #999; font-size: 11px; margin-top: 5px;">
-                        提示：长按记录项可进入多选模式，滑动时不会触发多选
-                    </div>
-                </div>
-                
-                <div class="stats-list">
+                <div class="stats-list" style="margin-top: 0px; margin-bottom: 100px;">
                     <h3 style="color: #333;">详细记录 <span style="font-size: 12px; color: #666; font-weight: normal;">(左滑删除 | 长按多选)</span></h3>
-                             <div id="recordsList" style="max-height: 500px; overflow-y: auto;">
+                             <div id="recordsList" style="max-height: calc(100vh - 280px); overflow-y: auto;">
                      <!-- 详细记录将在这里生成 -->
                  </div>
              </div>
@@ -482,6 +468,33 @@
 
 <!-- 图表悬浮提示框 -->
 <div id="chartTooltip" class="chart-tooltip"></div>
+
+<!-- 底部多选操作栏 -->
+<div id="multiSelectActions" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: #ffffff; padding: 10px; z-index: 100; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); border-top: 1px solid #eee;">
+    <div style="display: flex; gap: 10px; margin-bottom: 5px;">
+        <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
+        <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
+        <button class="btn btn-danger" onclick="deleteSelectedRecords()" style="flex: 1;">删除选中</button>
+    </div>
+    <div style="text-align: center; color: #666; font-size: 12px;">
+        已选择 <span id="selectedCount">0</span> 条记录
+    </div>
+</div>
+
+<!-- 图表悬浮提示框 -->
+<div id="chartTooltip" class="chart-tooltip"></div>
+
+<!-- 底部多选操作栏 -->
+<div id="multiSelectActions" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: #ffffff; padding: 10px; z-index: 100; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); border-top: 1px solid #eee;">
+    <div style="display: flex; gap: 10px; margin-bottom: 5px;">
+        <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
+        <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
+        <button class="btn btn-danger" onclick="deleteSelectedRecords()" style="flex: 1;">删除选中</button>
+    </div>
+    <div style="text-align: center; color: #666; font-size: 12px;">
+        已选择 <span id="selectedCount">0</span> 条记录
+    </div>
+</div>
 
 <script src="../script/api.js"></script>
 <script>
@@ -1365,7 +1378,7 @@
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'};">${weekdayNames[record.weekday]}</div>
                                     ${isMultiSelectMode ? `<div class="selection-box" 
-                                        style="width: 24px; height: 24px; border: 2px solid #007aff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; margin-left: 10px; z-index: 1000; position: relative; cursor: pointer; ${selectionStyle}" 
+                                        style="width: 18px; height: 18px; border: 1.5px solid #007aff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; margin-left: 10px; z-index: 1000; position: relative; cursor: pointer; ${selectionStyle}" 
                                         onclick="event.stopPropagation(); toggleRecordSelection('${record.id}');"
                                         onmousedown="event.stopPropagation();"
                                         onmouseup="event.stopPropagation();">${selectionIcon}</div>` : ''}
