@@ -456,7 +456,7 @@
                     <button class="btn btn-danger" onclick="clearStatistics()" style="flex: 1;">清空记录</button>
                 </div>
                 
-                <div class="stats-list" style="margin-top: 0px; margin-bottom: 100px;">
+                <div class="stats-list" style="margin-top: 0px; margin-bottom: 0px;">
                     <h3 style="color: #333;">详细记录 <span style="font-size: 12px; color: #666; font-weight: normal;">(左滑删除 | 长按多选)</span></h3>
                              <div id="recordsList" style="max-height: calc(100vh - 280px); overflow-y: auto;">
                      <!-- 详细记录将在这里生成 -->
@@ -664,6 +664,8 @@
                 duration: 1500,
                 location: 'middle'
             });
+            // 阻止事件传播，确保多选模式完全退出
+            return;
         } else {
             console.log('关闭统计页面，回到首页');
             // 非多选模式下需要回到首页，不是直接关闭frame，而是让主框架处理页面切换
@@ -1759,6 +1761,12 @@
         // 重置所有滑动状态
         resetAllSwipeStates();
         
+        // 设置stats-list区域的margin-bottom以避免被底部操作栏遮挡
+        var statsList = document.querySelector('.stats-list');
+        if (statsList) {
+            statsList.style.marginBottom = '100px';
+        }
+        
         generateRecordsList(); // 重新生成列表以显示选择框
     }
 
@@ -1772,6 +1780,12 @@
         
         // 重置所有滑动状态
         resetAllSwipeStates();
+        
+        // 移除stats-list区域的margin-bottom
+        var statsList = document.querySelector('.stats-list');
+        if (statsList) {
+            statsList.style.marginBottom = '0px';
+        }
         
         generateRecordsList(); // 重新生成列表以隐藏选择框
     }
