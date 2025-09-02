@@ -1492,7 +1492,7 @@
         
         var detailHTML = `
         <div class="detail-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center;">
-            <div class="detail-modal" style="background: white; border-radius: 10px; padding: 20px; margin: 20px; max-width: 90%; max-height: 80%; overflow-y: auto;">
+            <div class="detail-modal" style="background: white; border-radius: 10px; padding: 20px; margin: 20px; max-width: 90%; max-height: 80%;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="margin: 0; color: ${titleColor};">${titleText}</h3>
                     <button onclick="closeRecordDetail()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666;">×</button>
@@ -1542,6 +1542,10 @@
         
         // 增强滑动穿透防护：阻止背景页面滚动
         function preventBackgroundScroll(e) {
+            var patternDialog = document.getElementById('pattern_dialog');
+            if (patternDialog && patternDialog.contains(e.target)) {
+                return; // 允许pattern_dialog内部滚动
+            }
             e.preventDefault();
         }
         document.addEventListener('touchmove', preventBackgroundScroll, { passive: false });
@@ -2310,7 +2314,7 @@
                 var deltaY = Math.abs(currentY - startY);
                 
                 // 如果移动距离很小，认为是点击
-                if (deltaX < 10 && deltaY < 10) {
+                if (deltaX < 20 && deltaY < 20) {
                     handleRecordClick(recordId);
                 }
             }
@@ -2611,7 +2615,8 @@
                     return record.weekday === weekdayIndex;
                 });
                 
-                content = generatePatternDetailContent(records, '星期', peakWeekday);
+                // content = generatePatternDetailContent(records, '星期', peakWeekday);
+                content = generatePatternDetailContent(records, 10); // 默认显示10条记录
                 break;
                 
             case 'hour':
@@ -2634,7 +2639,8 @@
                     return recordHour === hour;
                 });
                 
-                content = generatePatternDetailContent(records, '时段', peakHour);
+                // content = generatePatternDetailContent(records, '时段', peakHour);
+                content = generatePatternDetailContent(records, 10);
                 break;
                 
             case 'month':
@@ -2656,7 +2662,8 @@
                     return record.month === month;
                 });
                 
-                content = generatePatternDetailContent(records, '月份', peakMonth);
+                // content = generatePatternDetailContent(records, '月份', peakMonth);
+                content = generatePatternDetailContent(records, 10);
                 break;
                 
             case 'prediction':
@@ -2676,16 +2683,16 @@
         }
         
         // 显示详情弹窗
-        showDetailDialog(title, content);
+        showPatternDetailDialog(title, content, records);
     }
     
     // 生成行为模式详情内容-样式渲染数据
-    function generatePatternDetailContent(records, type, value) {
+    function generatePatternDetailContent(records, displayCount) {
         if (records.length === 0) {
             return '<p id="pattern_dialog" style="text-align: center; color: #666;">暂无相关数据</p>';
         }
         
-        var content = '<div id = "pattern_dialog" style="max-height: 400px; overflow-y: auto;">';
+        var content = '<div id = "pattern_dialog" style="max-height: 70vh; overflow-y: auto; -webkit-overflow-scrolling: touch;">';
         
         // 统计信息
         content += '<div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">';
@@ -2720,7 +2727,7 @@
         });
         
         sortedRecords.forEach(function(record, index) {
-            if (index < 10) { // 只显示最近10条记录
+            if (index < displayCount) { // 显示指定数量的记录
                 content += '<div style="border-bottom: 1px solid #eee; padding: 10px 0; margin-bottom: 10px;">';
                 content += '<div style="display: flex; justify-content: flex-start; align-items: center; margin-bottom: 5px;">';
                 content += '<span style="font-weight: bold; color: #333;">' + record.date + ' ' + record.time + '</span>';
@@ -2733,8 +2740,8 @@
             }
         });
         
-        if (records.length > 10) {
-            content += '<div style="text-align: center; color: #666; font-size: 12px; padding: 10px;">还有 ' + (records.length - 10) + ' 条记录...</div>';
+        if (records.length > displayCount) {
+            content += '<div id="loadMoreBtn" style="text-align: center; color: #409EFF; font-size: 12px; padding: 10px; cursor: pointer;">点击加载更多 ' + (records.length - displayCount) + ' 条记录</div>';
         }
         
         content += '</div>';
@@ -2792,7 +2799,7 @@
     }
     
     // 行为模式框的显示详情弹窗
-    function showDetailDialog(title, content) {
+    function showPatternDetailDialog(title, content, records) {
         // 创建弹窗容器
         var dialog = document.createElement('div');
         dialog.style.cssText = `
@@ -2854,8 +2861,29 @@
             padding: 20px;
             overflow-y: auto;
             max-height: 60vh;
+            -webkit-overflow-scrolling: touch;
+            overflow-scrolling: touch;
+            scroll-behavior: smooth;
+            -webkit-scroll-snap-type: none;
+            scroll-snap-type: none;
         `;
-        dialogBody.innerHTML = content;
+        let currentDisplayCount = 10;
+        
+        // 加载更多按钮，触发后更新弹窗内容
+        function updateDialogContent() {
+            const newContent = generatePatternDetailContent(records, currentDisplayCount);
+            dialogBody.innerHTML = newContent;
+            
+            const loadMoreBtn = dialogBody.querySelector('#loadMoreBtn');
+            if (loadMoreBtn) {
+                loadMoreBtn.addEventListener('click', function() {
+                    currentDisplayCount = Math.min(currentDisplayCount + 10, records.length);
+                    updateDialogContent();
+                });
+            }
+        }
+        
+        updateDialogContent();
         // 组装弹窗
         dialogContent.appendChild(dialogHeader);
         dialogContent.appendChild(dialogBody);
@@ -2875,24 +2903,24 @@
             const scrollTop = dialogBody.scrollTop;
             const scrollHeight = dialogBody.scrollHeight;
             const offsetHeight = dialogBody.offsetHeight;
-            const isAtTop = scrollTop === 0;
-            const isAtBottom = scrollTop + offsetHeight >= scrollHeight - 1;
+            // 使用更宽松的边界判断，增强滚动体验
+            const isNearTop = scrollTop <= 10;
+            const isNearBottom = scrollTop + offsetHeight >= scrollHeight - 10;
             const deltaY = currentY - startY;
             
-            // 优化滑动穿透处理
-            if ((isAtTop && deltaY > 0) || (isAtBottom && deltaY < 0)) {
-                // 当在顶部向上滑动或底部向下滑动时，阻止默认行为
-                e.preventDefault();
-                e.stopPropagation();
-            } else if (scrollTop !== startScrollTop) {
-                // 如果内容正在滚动，阻止事件传播到背景
+            // 只有在接近边界并且继续滑动时才阻止默认行为
+            if (((isNearTop && deltaY > 0) || (isNearBottom && deltaY < 0)) && e.cancelable) {
+                // 只阻止冒泡，不阻止默认行为
                 e.stopPropagation();
             }
-        }, { passive: false });
+        }, { passive: true });
         
         // 防止背景页面滚动
         function preventBackgroundScroll(e) {
-            e.preventDefault();
+            // 修改阻止背景滚动函数，增加判断，如果是对话框内部元素则不阻止滑动
+            if (!dialogContent.contains(e.target) && e.cancelable) {
+                e.preventDefault();
+            }
         }
         document.addEventListener('touchmove', preventBackgroundScroll, { passive: false });
         
