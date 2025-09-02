@@ -594,11 +594,68 @@
         }
     }
 
+    // 存储最近处理的短信（用于去重）
+    // 从localStorage加载最近处理记录（跨会话/实例共享）
+    var storedRecentSMS = localStorage.getItem('recentSMS');
+    var recentSMS = storedRecentSMS ? JSON.parse(storedRecentSMS) : { timestamp: 0, tel: '', content: '' };
+    var SMS_DUPLICATE_WINDOW = 5000; // 去重时间窗口（毫秒）
+
     // 对监听到的短信进行处理，满足条件后触发提醒
     function processSMS(sms) {
         if (!sms || !sms.tel) {
             return;
         }
+        
+        // 读取最新的去重记录（解决多实例同步问题）
+        var storedRecentSMS = localStorage.getItem('recentSMS');
+        var storedAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+        var currentRecentSMS = storedRecentSMS ? JSON.parse(storedRecentSMS) : { timestamp: 0, tel: '', content: '' };
+
+        // 刷新警报记录确保使用最新数据
+        loadAlertRecords();
+
+        // 检查是否为重复短信   
+        // 去重逻辑：检查是否在短时间内收到相同内容的短信
+        var now = Date.now();
+        // 按天去重逻辑：同一天内相同手机号和内容视为重复
+        var currentDate = new Date().toISOString().split('T')[0];
+        var recentDate = new Date(currentRecentSMS.timestamp).toISOString().split('T')[0];
+        var isDuplicate = (currentDate === recentDate && 
+                          currentRecentSMS.tel === sms.tel && 
+                          currentRecentSMS.content === sms.content);
+        
+        // 同时检查历史警报记录防止多实例重复
+        if (!isDuplicate) {
+            var storedAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+            var latestAlertRecords = storedAlertRecords ? JSON.parse(storedAlertRecords) : [];
+            var recentAlert = latestAlertRecords.find(function(record) {
+                var recordTimestamp = new Date(record.timestamp).getTime();
+                var recordDate = new Date(recordTimestamp).toISOString().split('T')[0];
+                var currentDate = new Date().toISOString().split('T')[0];
+                return (currentDate === recordDate &&
+                    record.phoneNumber === sms.tel &&
+                    record.content === sms.content);
+            });
+            isDuplicate = !!recentAlert;
+        }
+        
+        if (isDuplicate) {
+            addLog('检测到重复短信，已忽略处理', 'warning');
+            return;
+        }
+        
+        // 并发更新检测：验证期间是否有其他实例修改了数据
+        var latestStoredRecentSMS = localStorage.getItem('recentSMS');
+        var latestStoredAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+        if (latestStoredRecentSMS !== storedRecentSMS || latestStoredAlertRecords !== storedAlertRecords) {
+            addLog('检测到并发更新，重新检查重复', 'info');
+            return processSMS(sms); // 重试检测流程
+        }
+        
+        // 确定非重复后立即同步到localStorage（防止竞态条件）
+        var newRecentSMS = { timestamp: now, tel: sms.tel, content: sms.content };
+        localStorage.setItem('recentSMS', JSON.stringify(newRecentSMS));
+        recentSMS = newRecentSMS;
         
         addLog('收到短信来自: ' + sms.tel + ', 内容: ' + (sms.content ? sms.content.substr(0, 30) + '...' : '无内容'));
         
@@ -616,11 +673,14 @@
         // 检查短信内容是否匹配关键词
         if (checkContentMatch(sms.content)) {
             addLog('短信内容匹配关键词，触发提醒', 'success');
-            playAlert(sms.content);
+            // 推送通知到通知栏
             showNotification('【紧急】交警短信', sms.content);
             
             // 记录警报事件
             recordAlert(sms);
+
+            // 重点：播放提醒音效并在APP内弹窗
+            playAlert(sms.content);
         } else {
             addLog('短信内容不匹配关键词，忽略', 'success');
         }
@@ -667,11 +727,18 @@
             var alertVolumePercent = document.getElementById('alertVolume').value;
             var alertVolume = alertVolumePercent / 100;
             
-            // 保存当前音量并设置警报音量
-            saveAndSetVolume(alertVolume);
-            
-            // 开始连续播放铃声
-            startContinuousPlay(audioPath, smsContent);
+            // 保存当前音量并设置警报音量，通过回调接口实现音量设置后触发播放，避免异步问题
+            saveAndSetVolume(alertVolume, function(success) {
+                if (success) {
+                    // 开始连续播放铃声
+                    startContinuousPlay(audioPath, smsContent);
+                } else {
+                    isPlaying = false;
+                    addLog('音量设置失败，无法播放警报铃声', 'error');
+                    updateStatusDisplay();
+                    restoreOriginalVolume();
+                }
+            });
 
             // 显示提醒对话框（如果还没有显示）
             if (!isDialogShowing) {
@@ -705,7 +772,7 @@
                         if (isPlaying) {
                             startContinuousPlay(audioPath, smsContent);
                         }
-                    }, 500); // 500ms延迟后继续
+                    }, 500); // 500ms延迟确保音频设备完成播放周期
                 } else {
                     addLog('警报铃声已停止', 'success');
                     updateStatusDisplay();
@@ -1006,34 +1073,38 @@
     var originalVolume = 0; // 值为0到1之间的小数，0为静音，1为最大音量。
     
     // 保存当前音量并设置新音量
-    function saveAndSetVolume(newVolume) {
-        if (!acc5Util) {
-            addLog('acc5Util模块未初始化，无法控制音量', 'error');
-            return false;
-        }
-        
-        // 先获取当前音量：system：系统音量，music：媒体音量，ring：铃声音量，call：通话音量，alarm：闹钟音量，notice: 通知音量
-        acc5Util.getVol({}, function(ret, err) {
-            if (ret && ret.data) {
-                originalVolume = ret.data.music;
-                console.log('----------------当前系统音量2：' + JSON.stringify(ret));
-                addLog('保存原始音量: ' + (originalVolume * 100).toFixed(0) + '%', 'success');
-                
-                // 设置新音量
-                acc5Util.setVol({value: newVolume}, function(setRet, setErr) {
-                    if (setRet) {
-                        addLog('设置警报音量: ' + (newVolume * 100).toFixed(0) + '%', 'success');
-                    } else {
-                        addLog('设置音量失败: ' + JSON.stringify(setErr), 'error');
-                    }
-                });
-            } else {
-                addLog('获取原始音量失败: ' + JSON.stringify(err), 'error');
-            }
-        });
-        
-        return true;
+    function saveAndSetVolume(newVolume, callback) {
+    if (!acc5Util) {
+        addLog('acc5Util模块未初始化，无法控制音量', 'error');
+        if (callback) callback(false);
+        return false;
     }
+    
+    // 先获取当前音量：system：系统音量，music：媒体音量，ring：铃声音量，call：通话音量，alarm：闹钟音量，notice: 通知音量
+    acc5Util.getVol({}, function(ret, err) {
+        if (ret && ret.data) {
+            originalVolume = ret.data.music;
+            console.log('----------------当前系统音量2：' + JSON.stringify(ret));
+            addLog('保存原始音量: ' + (originalVolume * 100).toFixed(0) + '%', 'success');
+            
+            // 设置新音量
+            acc5Util.setVol({value: newVolume}, function(setRet, setErr) {
+                if (setRet) {
+                    addLog('设置警报音量: ' + (newVolume * 100).toFixed(0) + '%', 'success');
+                    if (callback) callback(true);
+                } else {
+                    addLog('设置音量失败: ' + JSON.stringify(setErr), 'error');
+                    if (callback) callback(false);
+                }
+            });
+        } else {
+            addLog('获取原始音量失败: ' + JSON.stringify(err), 'error');
+            if (callback) callback(false);
+        }
+    });
+    
+    return true;
+}
     
     // 恢复原始音量
     function restoreOriginalVolume() {
@@ -1239,29 +1310,45 @@
     
     // 记录警报事件
     function recordAlert(sms) {
-        // 10秒内同手机号+内容只记录一次
-        var now = Date.now();
+        // 第一次检查：加载最新记录
+        loadAlertRecords();
+        var currentDate = new Date().toISOString().split('T')[0];
         var exists = alertRecords.some(function(r) {
-            return r.phoneNumber === sms.tel && r.content === sms.content && Math.abs(new Date(r.timestamp).getTime() - now) < 10000;
+            return r.phoneNumber === sms.tel && r.content === sms.content && r.date === currentDate;
         });
         if (exists) {
             addLog('该短信已处理，跳过重复', 'info');
             return;
         }
-        var record = {
+
+        // 准备新记录
+        let record = {
             id: Date.now(),
             timestamp: new Date().toISOString(),
-            date: new Date().toISOString().split('T')[0], // YYYY-MM-DD格式
+            date: new Date().toISOString().split('T')[0],
             time: new Date().toLocaleTimeString(),
             phoneNumber: sms.tel,
             content: sms.content,
             year: new Date().getFullYear(),
             month: new Date().getMonth() + 1,
             day: new Date().getDate(),
-            weekday: new Date().getDay() // 0-6, 0是周日
+            weekday: new Date().getDay()
         };
-        
+
+
+        // 第二次检查：保存前再次验证（防止并发添加）
+        loadAlertRecords();
+        exists = alertRecords.some(function(r) {
+            return r.phoneNumber === sms.tel && r.content === sms.content && r.date === currentDate;
+        });
+        if (exists) {
+            addLog('并发检测到重复记录，已自动跳过', 'info');
+            return;
+        }
+        // 使用已准备的记录对象
         alertRecords.push(record);
+        
+        // 确保记录只被添加一次
         saveAlertRecords();
         addLog('已记录警报事件: ' + record.date + ' ' + record.time, 'success');
     }
