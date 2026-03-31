@@ -2888,41 +2888,42 @@
         dialogContent.appendChild(dialogHeader);
         dialogContent.appendChild(dialogBody);
         dialog.appendChild(dialogContent);
+        // 防止滚动穿透的关键CSS
+        dialogBody.style.overscrollBehavior = 'contain';
+        dialogBody.style.overflowY = 'auto';
+        dialogBody.style.touchAction = 'pan-y';
         // 防止内容区滚动穿透
         let startY = 0;
-        let startScrollTop = 0;
         dialogBody.addEventListener('touchstart', function(e) {
             if (e.touches.length === 1) {
                 startY = e.touches[0].clientY;
-                startScrollTop = dialogBody.scrollTop;
             }
-        }, { passive: false });
+        }, { passive: true });
         dialogBody.addEventListener('touchmove', function(e) {
             if (e.touches.length !== 1) return;
             const currentY = e.touches[0].clientY;
             const scrollTop = dialogBody.scrollTop;
             const scrollHeight = dialogBody.scrollHeight;
             const offsetHeight = dialogBody.offsetHeight;
-            // 使用更宽松的边界判断，增强滚动体验
-            const isNearTop = scrollTop <= 10;
-            const isNearBottom = scrollTop + offsetHeight >= scrollHeight - 10;
             const deltaY = currentY - startY;
-            
-            // 只有在接近边界并且继续滑动时才阻止默认行为
-            if (((isNearTop && deltaY > 0) || (isNearBottom && deltaY < 0)) && e.cancelable) {
-                // 只阻止冒泡，不阻止默认行为
+            const isAtTop = scrollTop <= 0;
+            const isAtBottom = scrollTop + offsetHeight >= scrollHeight;
+            // 到达边界时阻止默认行为
+            if ((isAtTop && deltaY > 0) || (isAtBottom && deltaY < 0)) {
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
                 e.stopPropagation();
             }
-        }, { passive: true });
-        
-        // 防止背景页面滚动
-        function preventBackgroundScroll(e) {
-            // 修改阻止背景滚动函数，增加判断，如果是对话框内部元素则不阻止滑动
-            if (!dialogContent.contains(e.target) && e.cancelable) {
-                e.preventDefault();
+        }, { passive: false });
+        // 阻止蒙层上的触摸事件传播
+        dialog.addEventListener('touchmove', function(e) {
+            if (!dialogContent.contains(e.target)) {
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
             }
-        }
-        document.addEventListener('touchmove', preventBackgroundScroll, { passive: false });
+        }, { passive: false });
         
         // 只在蒙层滑动时关闭弹窗，内容区滑动不关闭
         var closeOnMove = function(e) {
@@ -2948,10 +2949,6 @@
             }
             // 恢复页面滚动
             document.body.style.overflow = '';
-            // 移除滑动监听
-            dialog.removeEventListener('touchmove', closeOnMove);
-            // 移除背景滚动阻止
-            document.removeEventListener('touchmove', preventBackgroundScroll);
         };
     }
 

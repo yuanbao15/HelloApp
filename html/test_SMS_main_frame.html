@@ -46,9 +46,9 @@
             align-items: center;
             padding: 8px 12px;
             cursor: pointer;
-            transition: all 0.3s ease;
             border-radius: 8px;
             min-width: 60px;
+            background: transparent;
         }
         
         .nav-item.active {
@@ -56,8 +56,20 @@
             color: #007aff;
         }
         
-        .nav-item:hover {
-            background: #f5f5f5;
+        /* 仅在支持hover的设备上应用hover效果 */
+        @media (hover: hover) {
+            .nav-item:hover:not(.active) {
+                background: #f5f5f5;
+            }
+        }
+        
+        .nav-item:focus {
+            outline: none;
+            background: transparent;
+        }
+        
+        .nav-item:active:not(.active) {
+            background: transparent;
         }
         
         .nav-icon {
@@ -188,18 +200,24 @@
                     // 新增：从更多返回上个页面
                     console.log('prevPage: ', prevPage);
                     console.log('更多页-触发了返回');
-                     api.execScript({
-                        frameName: 'donateFrame', // 统计页frame的name
-                        script: 'goBack();' // goBack方法未执行待解决-已实现
-                    });
 
-                    // if (prevPage === 'home') {
-                    //     showHomePage();
-                    // } else if (prevPage === 'statistics') {
-                    //     showStatisticsPage();
-                    // }
-                    // currentPage = prevPage;
-                    // updateNavigationState(currentPage); // 恢复高亮
+                    // 先尝试关闭可能存在的捐赠页面
+                    if (pageFrames.donate) {
+                        api.execScript({
+                            frameName: 'donateFrame', // 统计页frame的name
+                            script: 'goBack();' // goBack方法未执行待解决-已实现
+                        });
+                        pageFrames.donate = null;
+                    }
+
+                    // 恢复之前的页面状态
+                    if (prevPage === 'home') {
+                        showHomePage();
+                    } else if (prevPage === 'statistics') {
+                        showStatisticsPage();
+                    }
+                    currentPage = prevPage;
+                    updateNavigationState(currentPage); // 恢复高亮
                     // actionSheet 无法主动关闭，只能模拟返回
                 } else {
                     // 其它页面可按需扩展
@@ -227,6 +245,14 @@
                     currentPage = 'home';
                     pageFrames.statistics = null;
                     switchPage('home');
+                } else if (ret && ret.name === 'donateFrame') {
+                    console.log('捐赠页面frame已关闭');
+                    pageFrames.donate = null;
+                    // 捐赠页面关闭后，currentPage可能仍然是'more'，需要恢复状态
+                    if (currentPage === 'more') {
+                        currentPage = prevPage;
+                        updateNavigationState(currentPage);
+                    }
                 }
             });
             
@@ -262,7 +288,6 @@
                     if (currentPage !== pageName) {
                         console.log('执行home页面切换');
                         updateNavigationState(pageName);
-                        console.log('导航状态已更新');
                         showHomePage();
                         currentPage = pageName;
                         console.log('当前页面已更新为：', currentPage);
@@ -278,17 +303,22 @@
                         updateNavigationState(pageName);
                         showStatisticsPage(); // 默认不刷新，初次加载或下拉、多次点击才刷新
                         currentPage = pageName;
+                        console.log('当前页面已更新为：', currentPage);
                     } else {
                         console.log('当前已经是statistics页面，直接显示');
                         showStatisticsPage();
                     }
                     break;
                 case 'more':
-                    prevPage = currentPage;
+                    // 只有在当前不是更多页面时才更新prevPage
+                    if (currentPage !== 'more') {
+                        prevPage = currentPage;
+                    }
                     currentPage = 'more';
                     showMoreOptions();
                     // 调用 updateNavigationState 保持上一个页面高亮
                     updateNavigationState('more');
+                    console.log('当前页面已更新为：', currentPage);
                     break;
             }
         }
@@ -402,8 +432,14 @@
                                 hScrollBarEnabled: false,
                                 pageParam: {}
                             });
+                            pageFrames.donate = 'donateFrame';
                             break;
                     }
+                } else {
+                    // 用户点击了取消或actionSheet外部，恢复之前的页面状态
+                    console.log('actionSheet取消，恢复页面状态');
+                    currentPage = prevPage;
+                    updateNavigationState(currentPage);
                 }
             });
         }
@@ -416,6 +452,12 @@
             navItems.forEach(function(item, index) {
                 console.log('移除导航项', index+1, '的active类');
                 item.classList.remove('active');
+                item.blur();
+                // 强制重置样式
+                item.style.background = '';
+                item.style.color = '';
+                // 触发重绘
+                item.offsetHeight;
             });
             // 只处理 home 和 statistics，高亮“更多”会造成误导
             if (activeTab === 'home') {
