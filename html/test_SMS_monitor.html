@@ -1308,14 +1308,15 @@
             addLog('短信内容不匹配关键词，忽略', 'success');
         }
     }
-    // 判断关键词是否匹配
+    // 判断关键词是否匹配（大小写不敏感）
     function checkContentMatch(content) {
         if (!content || keywords.length === 0) {
             return false;
         }
-        
+
+        var lowerContent = content.toLowerCase();
         var matchedKeywords = keywords.filter(function(keyword) {
-            return keyword && content.indexOf(keyword) !== -1;
+            return keyword && lowerContent.indexOf(keyword.toLowerCase()) !== -1;
         });
         
         if (matchLogic === 'or') {
@@ -2001,7 +2002,7 @@
         // 避免 currentYear（脚本加载时计算）跨年错位。
         var now = new Date();
         let record = {
-            id: Date.now(),
+            id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
             timestamp: now.toISOString(),
             date: currentDate,
             time: now.toLocaleTimeString(),
@@ -2032,25 +2033,65 @@
         addLog('已记录警报事件: ' + record.date + ' ' + record.time, 'success');
     }
 
-    // 保存警报记录到本地存储
+    // 保存警报记录到本地存储（优先 setPrefs，失败降级到 fs://）
     // year 参数用于跨年场景：脚本加载时计算的 currentYear 可能与
     // 最新一条记录的 year 不一致，用 record.year 作为 key 更准确（B8 修复）。
     function saveAlertRecords(year) {
         var useYear = (year !== undefined && year !== null) ? year : currentYear;
+        var key = 'alertRecords_' + useYear;
+        var value = JSON.stringify(alertRecords);
+        safeSetPrefs(key, value);
+    }
+
+    // 安全写入：优先 api.setPrefs，失败降级到 fs:// 文件（M9 修复）
+    function safeSetPrefs(key, value) {
         try {
-            api.setPrefs({
-                key: 'alertRecords_' + useYear,
-                value: JSON.stringify(alertRecords)
-            });
+            api.setPrefs({ key: key, value: value });
         } catch (e) {
-            addLog('保存警报记录失败: ' + e.message, 'error');
+            console.log('setPrefs 失败，降级到 fs://: ' + e.message);
+            try {
+                api.writeFile({
+                    path: 'fs://prefs_backup/' + key + '.json',
+                    data: value
+                }, function(ret, err) {
+                    if (!ret || !ret.status) {
+                        console.log('fs:// 降级写入也失败: ' + JSON.stringify(err));
+                    }
+                });
+            } catch (e2) {
+                console.log('fs:// 降级写入异常: ' + e2.message);
+            }
         }
     }
+
+    // 安全读取：优先 api.getPrefs，失败或无数据时从 fs:// 降级读取（M9 修复）
+    function safeGetPrefs(key) {
+        try {
+            var val = api.getPrefs({ sync: true, key: key });
+            if (val) return val;
+        } catch (e) {
+            console.log('getPrefs 失败，尝试 fs:// 降级: ' + e.message);
+        }
+        // 降级：从 fs:// 读取
+        try {
+            var fsData = api.readFile({
+                sync: true,
+                path: 'fs://prefs_backup/' + key + '.json'
+            });
+            if (fsData && fsData.data) {
+                console.log('fs:// 降级读取成功: ' + key);
+                return fsData.data;
+            }
+        } catch (e2) {
+            console.log('fs:// 降级读取失败: ' + e2.message);
+        }
+        return null;
+    }
     
-    // 从本地存储加载警报记录
+    // 从本地存储加载警报记录（优先 getPrefs，失败降级到 fs://）
     function loadAlertRecords() {
         try {
-            var savedRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+            var savedRecords = safeGetPrefs('alertRecords_' + currentYear);
             if (savedRecords) {
                 alertRecords = JSON.parse(savedRecords);
                 addLog('已加载' + alertRecords.length + '条警报记录', 'success');

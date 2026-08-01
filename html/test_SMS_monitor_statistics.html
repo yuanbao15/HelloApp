@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
     <title>违停警报统计</title>
     <link rel="stylesheet" href="../css/api.css">
-    <script src="https://unpkg.com/mescroll.js@1.4.2/mescroll.min.js"></script>
+    <script src="../script/mescroll.min.js"></script>
     <style>
         /* .container {
             padding: 15px;
@@ -67,12 +67,15 @@
         .stats-container {font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;}
         .stats-header {background: #007aff; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center;}
         .stats-header button:hover {opacity: 0.8;}
-        .stats-summary .grid-item {transition: transform 0.2s;}
-        .stats-summary .grid-item:hover {transform: scale(1.05);}
         .stats-charts {transition: all 0.3s ease;}
         .stats-charts:hover {box-shadow: 0 2px 8px rgba(0,0,0,0.1);}
-        .chart-bar {transition: height 0.5s ease;}
+        .chart-bar {transition: opacity 0.2s ease;}
         .chart-bar:hover {opacity: 0.8;}
+        /* 柱状图入场动画：用 GPU 加速的 scaleY 替代 height transition，消除初始闪烁（M10） */
+        @keyframes barGrow {
+            from { transform: scaleY(0); opacity: 0; }
+            to   { transform: scaleY(1); opacity: 1; }
+        }
         .records-item {transition: all 0.2s ease;}
         .records-item:hover {background: #f0f0f0 !important; transform: translateX(2px);}
         .stats-actions button {transition: all 0.2s ease;}
@@ -381,7 +384,7 @@
             </div>
             
             <div class="stats-content" style="padding: 15px;">
-                <div class="stats-summary" style="background: #f8f8f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div class="stats-summary" style="background: #f0f4fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #007aff;">
                     <h3 style="margin-top: 0; color: #333;">统计概览</h3>
                     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
                         <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -551,6 +554,7 @@
         LONG_PRESS_CANCEL_MOVE: 12   // 任意方向超过此值即取消长按候选
     };
     var isConfirmDialogOpen = false; // 是否有确认对话框打开
+    var _detailOpenTime = 0; // 记录详情弹窗打开时间戳，用于防止打开手势的残留 click 误关闭弹窗
 
     // HTML 字符转义工具（B7 修复）：用于把短信内容等不可信字符串安全地嵌入 HTML
     function escapeHtml(s) {
@@ -791,10 +795,10 @@
         yearSelector.innerHTML = optionsHTML;
     }
 
-    // 从本地存储加载警报记录
+    // 从本地存储加载警报记录（优先 getPrefs，失败降级到 fs://）
     function loadAlertRecords() {
         try {
-            var savedRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+            var savedRecords = safeGetPrefs('alertRecords_' + currentYear);
             if (savedRecords) {
                 alertRecords = JSON.parse(savedRecords);
                 console.log('已加载' + alertRecords.length + '条警报记录');
@@ -892,7 +896,7 @@
         generateSmartAdvice();
     }
 
-    // 生成月度趋势图
+    // 生成月度趋势图（M10 修复：用 CSS animation 替代 JS height transition，消除初始闪烁）
     function generateMonthlyChart() {
         var monthlyData = new Array(12).fill(0);
         var monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
@@ -909,12 +913,13 @@
         monthlyData.forEach(function(count, index) {
             var height = maxValue > 0 ? (count / maxValue * 150) : 0;
             var color = count > 0 ? '#ff4444' : '#ddd';
+            // 延迟递增，让每根柱子错开入场（stagger 效果）
+            var delay = (index * 0.05).toFixed(2);
             chartHTML += `
                 <div style="display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end;">
                     <div style="font-size: 10px; color: #666; margin-bottom: 2px; font-weight: bold;">${count}</div>
-                    <div class="chart-bar" style="width: 20px; height: 0px; background: ${color}; border-radius: 3px; margin-bottom: 2px; transition: height 0.8s ease; cursor: pointer;" 
-                         title="${monthNames[index]}: ${count}次" 
-                         data-height="${height}"
+                    <div class="chart-bar" style="width: 20px; height: ${height}px; background: ${color}; border-radius: 3px; margin-bottom: 2px; cursor: pointer; transform-origin: bottom; animation: barGrow 0.6s ease-out ${delay}s both;"
+                         title="${monthNames[index]}: ${count}次"
                          data-month="${monthNames[index]}"
                          data-count="${count}"
                          onclick="showChartTooltip(event, '${monthNames[index]}', ${count}, '月度趋势')"></div>
@@ -923,16 +928,9 @@
             `;
         });
         document.getElementById('monthlyChart').innerHTML = chartHTML;
-        setTimeout(function() {
-            var bars = document.querySelectorAll('#monthlyChart .chart-bar');
-            bars.forEach(function(bar) {
-                var height = bar.getAttribute('data-height');
-                bar.style.height = height + 'px';
-            });
-        }, 100);
     }
 
-    // 生成星期分布图
+    // 生成星期分布图（M10 修复：用 CSS animation 替代 JS height transition，消除初始闪烁）
     function generateWeekdayChart() {
         var weekdayData = new Array(7).fill(0);
         var weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -948,12 +946,12 @@
         weekdayData.forEach(function(count, index) {
             var height = maxValue > 0 ? (count / maxValue * 150) : 0;
             var color = count > 0 ? '#007aff' : '#ddd';
+            var delay = (index * 0.05).toFixed(2);
             chartHTML += `
                 <div style="display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end;">
                     <div style="font-size: 10px; color: #666; margin-bottom: 2px; font-weight: bold;">${count}</div>
-                    <div class="chart-bar" style="width: 20px; height: 0px; background: ${color}; border-radius: 3px; margin-bottom: 2px; transition: height 0.8s ease; cursor: pointer;" 
-                         title="${weekdayNames[index]}: ${count}次" 
-                         data-height="${height}"
+                    <div class="chart-bar" style="width: 20px; height: ${height}px; background: ${color}; border-radius: 3px; margin-bottom: 2px; cursor: pointer; transform-origin: bottom; animation: barGrow 0.6s ease-out ${delay}s both;"
+                         title="${weekdayNames[index]}: ${count}次"
                          data-weekday="${weekdayNames[index]}"
                          data-count="${count}"
                          onclick="showChartTooltip(event, '${weekdayNames[index]}', ${count}, '星期分布')"></div>
@@ -962,13 +960,6 @@
             `;
         });
         document.getElementById('weekdayChart').innerHTML = chartHTML;
-        setTimeout(function() {
-            var bars = document.querySelectorAll('#weekdayChart .chart-bar');
-            bars.forEach(function(bar) {
-                var height = bar.getAttribute('data-height');
-                bar.style.height = height + 'px';
-            });
-        }, 200);
     }
 
     // 计算风险分析数据
@@ -1322,7 +1313,7 @@
         document.getElementById('smartAdvice').innerHTML = adviceHTML;
     }
 
-    // 生成时段分布图
+    // 生成时段分布图（M10 修复：用 CSS animation 替代 JS height transition，消除初始闪烁）
     function generateTimeChart() {
         var timeData = new Array(24).fill(0);
         var timeLabels = [];
@@ -1355,15 +1346,15 @@
             }
             nonZeroData = groupedData;
         }
-        nonZeroData.forEach(function(item) {
+        nonZeroData.forEach(function(item, index) {
             var height = maxValue > 0 ? (item.count / maxValue * 150) : 0;
             var color = '#44aa44';
+            var delay = (index * 0.05).toFixed(2);
             chartHTML += `
                 <div style="display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end;">
                     <div style="font-size: 10px; color: #666; margin-bottom: 2px; font-weight: bold;">${item.count}</div>
-                    <div class="chart-bar" style="width: 15px; height: 0px; background: ${color}; border-radius: 3px; margin-bottom: 2px; transition: height 0.8s ease; cursor: pointer;" 
-                         title="${item.hour}时: ${item.count}次" 
-                         data-height="${height}"
+                    <div class="chart-bar" style="width: 15px; height: ${height}px; background: ${color}; border-radius: 3px; margin-bottom: 2px; cursor: pointer; transform-origin: bottom; animation: barGrow 0.6s ease-out ${delay}s both;"
+                         title="${item.hour}时: ${item.count}次"
                          data-hour="${item.hour}"
                          data-count="${item.count}"
                          onclick="showChartTooltip(event, '${item.hour}时', ${item.count}, '时段分布')"></div>
@@ -1372,17 +1363,6 @@
             `;
         });
         document.getElementById('timeChart').innerHTML = chartHTML;
-        setTimeout(function() {
-            var bars = document.querySelectorAll('#timeChart .chart-bar');
-            bars.forEach(function(bar) {
-                var height = bar.getAttribute('data-height');
-                bar.style.height = height + 'px';
-                // 让柱状图支持滑动冒泡到mescroll
-                bar.addEventListener('touchstart', function(e) { /* 不阻止冒泡 */ });
-                bar.addEventListener('touchmove', function(e) { /* 不阻止冒泡 */ });
-                bar.addEventListener('touchend', function(e) { /* 不阻止冒泡 */ });
-            });
-        }, 300);
     }
 
     // 优化：增量加载 - 默认每页 PAGE_SIZE 条，底部出现"加载更多"按钮
@@ -1748,6 +1728,18 @@
 
     // 显示记录详情
     function showRecordDetail(recordId) {
+        // 防止重复打开导致弹窗叠加：直接移除已有弹窗（不走关闭动画，避免时序冲突）
+        var existingOverlay = document.querySelector('.detail-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+            // 同步清理滚动锁定和事件监听
+            if (window.detailEventListeners && window.detailEventListeners.preventBackgroundScroll) {
+                document.removeEventListener('touchmove', window.detailEventListeners.preventBackgroundScroll);
+                window.detailEventListeners = null;
+            }
+            document.body.style.overflow = '';
+        }
+
         var record = alertRecords.find(function(r) {
             return r.id.toString() === recordId;
         });
@@ -1808,6 +1800,19 @@
         
         document.body.insertAdjacentHTML('beforeend', detailHTML);
 
+        // 防止打开手势的残留 click 事件误触弹窗内按钮（关闭/删除等）
+        // 插入后立即禁用浮层交互，400ms 后恢复——从 DOM 层面统一拦截
+        var detailOverlay = document.querySelector('.detail-overlay');
+        if (detailOverlay) {
+            detailOverlay.style.pointerEvents = 'none';
+            setTimeout(function() {
+                if (detailOverlay && detailOverlay.style) {
+                    detailOverlay.style.pointerEvents = '';
+                }
+            }, 400);
+        }
+        _detailOpenTime = Date.now();
+
         // 防止滑动穿透
         document.body.style.overflow = 'hidden';
         
@@ -1853,6 +1858,12 @@
 
     // 关闭记录详情
     function closeRecordDetail() {
+        // 防止打开手势的残留 click 事件误关闭弹窗（400ms 保护期）
+        if (Date.now() - _detailOpenTime < 400) {
+            console.log('closeRecordDetail 被保护期拦截（距打开仅 ' + (Date.now() - _detailOpenTime) + 'ms）');
+            return;
+        }
+
         var detailOverlay = document.querySelector('.detail-overlay');
         var detailModal = document.querySelector('.detail-modal');
         
@@ -2150,13 +2161,57 @@
         });
     }
 
-    // 保存警报记录到本地存储
+    // 安全写入：优先 api.setPrefs，失败降级到 fs:// 文件（M9 修复）
+    function safeSetPrefs(key, value) {
+        try {
+            api.setPrefs({ key: key, value: value });
+        } catch (e) {
+            console.log('setPrefs 失败，降级到 fs://: ' + e.message);
+            try {
+                api.writeFile({
+                    path: 'fs://prefs_backup/' + key + '.json',
+                    data: value
+                }, function(ret, err) {
+                    if (!ret || !ret.status) {
+                        console.log('fs:// 降级写入也失败: ' + JSON.stringify(err));
+                    }
+                });
+            } catch (e2) {
+                console.log('fs:// 降级写入异常: ' + e2.message);
+            }
+        }
+    }
+
+    // 安全读取：优先 api.getPrefs，失败或无数据时从 fs:// 降级读取（M9 修复）
+    function safeGetPrefs(key) {
+        try {
+            var val = api.getPrefs({ sync: true, key: key });
+            if (val) return val;
+        } catch (e) {
+            console.log('getPrefs 失败，尝试 fs:// 降级: ' + e.message);
+        }
+        // 降级：从 fs:// 读取
+        try {
+            var fsData = api.readFile({
+                sync: true,
+                path: 'fs://prefs_backup/' + key + '.json'
+            });
+            if (fsData && fsData.data) {
+                console.log('fs:// 降级读取成功: ' + key);
+                return fsData.data;
+            }
+        } catch (e2) {
+            console.log('fs:// 降级读取失败: ' + e2.message);
+        }
+        return null;
+    }
+
+    // 保存警报记录到本地存储（优先 setPrefs，失败降级到 fs://）
     function saveAlertRecords() {
         try {
-            api.setPrefs({
-                key: 'alertRecords_' + currentYear,
-                value: JSON.stringify(alertRecords)
-            });
+            var key = 'alertRecords_' + currentYear;
+            var value = JSON.stringify(alertRecords);
+            safeSetPrefs(key, value);
         } catch (e) {
             console.log('保存警报记录失败: ' + e.message);
         }
@@ -2698,6 +2753,11 @@
     
     // 行为模式框的显示详情弹窗
     function showPatternDetailDialog(title, content, records) {
+        // 防止重复打开导致弹窗叠加：先关闭已有弹窗
+        if (window.closeDetailDialog) {
+            window.closeDetailDialog();
+        }
+
         // 创建弹窗容器
         var dialog = document.createElement('div');
         dialog.style.cssText = `
@@ -2832,6 +2892,15 @@
         dialog.addEventListener('touchmove', closeOnMove, { passive: true });
         // 添加到页面
         document.body.appendChild(dialog);
+
+        // 防止打开手势的残留 click 事件误触弹窗内按钮（关闭等）
+        dialog.style.pointerEvents = 'none';
+        setTimeout(function() {
+            if (dialog && dialog.style) {
+                dialog.style.pointerEvents = '';
+            }
+        }, 400);
+
         // 禁止页面滚动，防止滑动穿透
         document.body.style.overflow = 'hidden';
         // 点击背景关闭弹窗
