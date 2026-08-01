@@ -89,6 +89,38 @@
         /* 多选模式样式 */
         .records-item.multi-select { border: 2px solid #007aff; }
         .records-item.multi-select.selected { background: #e3f2fd !important; }
+        /* 优化：选中态显著化（蓝底白字 + 阴影） */
+        .records-item.selected {
+            background: #007aff !important;
+            border-left-color: #0056cc !important;
+            color: #fff !important;
+            box-shadow: 0 2px 6px rgba(0,122,255,.25);
+        }
+        .records-item.selected * { color: #fff !important; }
+        /* 优化：按下瞬间反馈（轻微缩放） */
+        .records-item.gesture-active { transform: scale(.99); transition: transform .08s ease; }
+        /* 优化：让出外层 mescroll 接管垂直滚动 */
+        #recordsList,
+        .records-item-container,
+        .records-item { touch-action: pan-y; }
+        /* 优化：选中圆圈（视觉 22px，触控热区 44px） */
+        .selection-wrapper { padding: 11px; margin: -11px; box-sizing: content-box; }
+        .selection-box {
+            width: 22px;
+            height: 22px;
+            border: 2px solid #007aff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 13px;
+            background: #fff;
+            transition: all .15s ease;
+            position: relative;
+            z-index: 5;
+        }
+        .selection-box.selected { background: #007aff; color: #fff; }
         .selection-indicator { 
             width: 20px; 
             height: 20px; 
@@ -197,6 +229,12 @@
         .records-item.swiped {
             transform: translateX(-80px);
         }
+
+        /* 多选模式下隐藏删除按钮（兜底：即便 transform 残留也不可见） */
+        .records-list-multi-select .delete-button { display: none !important; }
+        .records-list-multi-select .swipe-hint { display: none !important; }
+        /* 多选模式下给底部留 60px，让最后一条记录不会被固定定位的操作栏视觉遮挡 */
+        .records-list-multi-select { padding-bottom: 60px !important; }
         
         .delete-button {
             position: absolute;
@@ -338,7 +376,7 @@
                     <select id="yearSelector" onchange="changeYear(this.value)" style="padding: 5px; border: none; border-radius: 3px; background: white; color: #333;">
                         <!-- 年份选项将在这里动态生成 -->
                     </select>
-                    <button onclick="goBack()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button>
+                    <!-- <button onclick="goBack()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer;">×</button> -->
                 </div>
             </div>
             
@@ -449,16 +487,16 @@
                     </div>
                 </div>
                 
-                <div class="stats-actions" style="display: flex; gap: 10px; margin-bottom: 20px;">
-                    <button class="btn" onclick="exportStatistics()" style="flex: 1;">导出数据</button>
-                    <button class="btn btn-success" onclick="shareStatistics()" style="flex: 1;">分享统计</button>
-                    <button class="btn" onclick="toggleMultiSelect()" style="flex: 1;" id="multiSelectBtn">多选删除</button>
-                    <button class="btn btn-danger" onclick="clearStatistics()" style="flex: 1;">清空记录</button>
+                <div class="stats-actions" style="display: flex; gap: 8px; margin-bottom: 20px;">
+                    <button class="btn" onclick="exportStatistics()" style="flex: 1; font-size: 13px; padding: 8px 4px; white-space: nowrap;">导出数据</button>
+                    <button class="btn btn-success" onclick="shareStatistics()" style="flex: 1; font-size: 13px; padding: 8px 4px; white-space: nowrap;">分享统计</button>
+                    <button class="btn" onclick="toggleMultiSelect()" style="flex: 1; font-size: 13px; padding: 8px 4px; white-space: nowrap;" id="multiSelectBtn">多选删除</button>
+                    <button class="btn btn-danger" onclick="clearStatistics()" style="flex: 1; font-size: 13px; padding: 8px 4px; white-space: nowrap;">清空记录</button>
                 </div>
                 
                 <div class="stats-list" style="margin-top: 0px; margin-bottom: 0px;">
                     <h3 style="color: #333;">详细记录 <span style="font-size: 12px; color: #666; font-weight: normal;">(左滑删除 | 长按多选)</span></h3>
-                             <div id="recordsList" style="max-height: calc(100vh - 280px); overflow-y: auto;">
+                             <div id="recordsList" style="padding-bottom: 16px;">
                      <!-- 详细记录将在这里生成 -->
                  </div>
              </div>
@@ -470,22 +508,7 @@
 <div id="chartTooltip" class="chart-tooltip"></div>
 
 <!-- 底部多选操作栏 -->
-<div id="multiSelectActions" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: #ffffff; padding: 10px; z-index: 100; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); border-top: 1px solid #eee;">
-    <div style="display: flex; gap: 10px; margin-bottom: 5px;">
-        <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
-        <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
-        <button class="btn btn-danger" onclick="deleteSelectedRecords()" style="flex: 1;">删除选中</button>
-    </div>
-    <div style="text-align: center; color: #666; font-size: 12px;">
-        已选择 <span id="selectedCount">0</span> 条记录
-    </div>
-</div>
-
-<!-- 图表悬浮提示框 -->
-<div id="chartTooltip" class="chart-tooltip"></div>
-
-<!-- 底部多选操作栏 -->
-<div id="multiSelectActions" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: #ffffff; padding: 10px; z-index: 100; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); border-top: 1px solid #eee;">
+<div id="multiSelectActions" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; background-color: #ffffff; padding: 5px; z-index: 100; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); border-top: 1px solid #eee;">
     <div style="display: flex; gap: 10px; margin-bottom: 5px;">
         <button class="btn" onclick="selectAllRecords()" style="flex: 1;">全选</button>
         <button class="btn" onclick="deselectAllRecords()" style="flex: 1;">取消全选</button>
@@ -502,18 +525,47 @@
     var currentYear = new Date().getFullYear(); // 当前年份
     var isMultiSelectMode = false; // 是否处于多选模式
     var selectedRecords = []; // 选中的记录ID数组
-    var longPressTimer = null; // 长按计时器
-    var touchStartY = 0; // 触摸开始位置
-    var touchStartTime = 0; // 触摸开始时间
-    var hasMoved = false; // 是否发生了移动
-    var moveThreshold = 10; // 移动阈值（像素）
-    var longPressThreshold = 1000; // 长按阈值（毫秒）
-    var isSwipeInProgress = false; // 跟踪滑动状态
     var justEnteredMultiSelectByLongPress = false;
     var shareAction = null; // 分享模块
     var mescroll = null; // mescroll实例
+
+    // 优化：手势状态统一管理（替代原 7 个分散 var）
+    var GESTURE = {
+        startX: 0, startY: 0, startT: 0,
+        currentX: 0, currentY: 0,
+        pointerId: null,
+        activeItem: null,
+        intent: 'pending',           // pending | h-swipe | v-scroll | long-press
+        longPressTimer: null,
+        longPressFired: false
+    };
+
+    // 优化：手势阈值常量（替代原 moveThreshold/longPressThreshold 等）
+    var TH = {
+        TAP_MAX_MOVE: 8,             // ≤8px 视为点击
+        SLOPE_RATIO: 1.5,            // |dy|/(|dx|+1) > 1.5 ⇒ 垂直意图
+        SWIPE_MIN_X: 50,             // 左滑生效阈值
+        SWIPE_MAX_Y: 30,             // 水平意图下垂直漂移上限
+        SWIPE_MAX_X: 80,             // 滑动视觉上限
+        LONG_PRESS_MS: 800,          // 长按阈值（800ms 折中方案）
+        LONG_PRESS_CANCEL_MOVE: 12   // 任意方向超过此值即取消长按候选
+    };
     var isConfirmDialogOpen = false; // 是否有确认对话框打开
-    
+
+    // HTML 字符转义工具（B7 修复）：用于把短信内容等不可信字符串安全地嵌入 HTML
+    function escapeHtml(s) {
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/[&<>"']/g, function(c) {
+            return {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[c];
+        });
+    }
+
     apiready = function() {
         // 分享模块引入
         shareAction = api.require('shareAction'); 
@@ -538,10 +590,13 @@
         
         // 初始化mescroll
         initMescroll();
-        
+
+        // 初始化指针事件委托（只需一次，对动态生成的 .records-item 自动生效）
+        bindPointerEvents();
+
         // 加载警报记录
         loadAlertRecords();
-        
+
         // 生成统计数据
         generateStatistics();
     };
@@ -1330,60 +1385,62 @@
         }, 300);
     }
 
-    // 底部-生成详细记录列表
+    // 优化：增量加载 - 默认每页 PAGE_SIZE 条，底部出现"加载更多"按钮
+    var PAGE_SIZE = 20;                  // 每页条数
+    var currentPageSize = 20;            // 当前已渲染的条数（重置时回到 PAGE_SIZE）
+
+    // 渲染记录列表（只渲染 currentPageSize 条）
     function generateRecordsList() {
+        // 重新生成时，重置分页
+        currentPageSize = PAGE_SIZE;
+        renderRecordsList();
+    }
+
+    // 实际渲染函数（增量入口：renderRecordsList / loadMoreRecords 都调用）
+    function renderRecordsList() {
         var recordsList = document.getElementById('recordsList');
         var recordsHTML = '';
-        
+
         if (alertRecords.length === 0) {
             recordsHTML = '<div style="text-align: center; color: #999; padding: 20px;">暂无警报记录</div>';
         } else {
-                    // 按时间倒序排列
-        var sortedRecords = getSortedRecordsDesc();
-            
-            sortedRecords.forEach(function(record) {
+            // 按时间倒序排列，取前 currentPageSize 条
+            var sortedRecords = getSortedRecordsDesc();
+            var displayRecords = sortedRecords.slice(0, currentPageSize);
+
+            displayRecords.forEach(function(record) {
                 var date = new Date(record.timestamp);
                 var weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-                
+
                 // 截取短信内容，避免过长
                 var shortContent = record.content.length > 50 ? record.content.substring(0, 50) + '...' : record.content;
-                
+
                 // 判断是否为测试记录：测试记录为浅灰色，正常记录为黑色，颜色区分便于阅读
                 var isTestRecord = record.content.indexOf('测试') !== -1 || record.content.indexOf('TEST') !== -1 || record.content.indexOf('Test') !== -1;
                 var textColor = isTestRecord ? '#999' : '#333'; // 测试记录为浅灰色，正常记录为黑色
                 var bgColor = isTestRecord ? '#f0f0f0' : '#f8f8f8'; // 测试记录背景色稍浅
                 var borderColor = isTestRecord ? '#ccc' : '#ff4444'; // 测试记录边框为灰色
-                
+
                 var isSelected = selectedRecords.indexOf(record.id.toString()) !== -1;
                 var selectionStyle = isSelected ? 'background: #007aff; color: white;' : '';
                 var selectionIcon = isSelected ? '✓' : '';
-                
+
                 // 允许通过长按触发多选删除，同时支持滑动删除
+                // 注：records-item 不再绑定 onclick（pointer 事件已统一处理点击，
+                // 否则 pointerup + click 会双触发 toggleRecordSelection 导致先勾后消）
                 recordsHTML += `
                     <div class="records-item-container">
-                        <div class="records-item${isSelected ? ' selected' : ''}" 
-                             style="background: ${bgColor}; border-left: 4px solid ${borderColor};" 
-                             data-record-id="${record.id}"
-                             data-touch-start-x="0"
-                             data-touch-start-y="0"
-                             data-touch-current-x="0"
-                             data-touch-current-y="0"
-                             data-is-touching="false"
-                             data-swipe-threshold="50"
-                             onclick="handleRecordClick('${record.id}')"
-                             onmousedown="handleMouseDown(event, '${record.id}')"
-                             onmousemove="handleMouseMove(event)"
-                             onmouseup="handleMouseUp(event, '${record.id}')"
-                             onmouseleave="handleMouseLeave()">
+                        <div class="records-item${isSelected ? ' selected' : ''}"
+                             style="background: ${bgColor}; border-left: 4px solid ${borderColor};"
+                             data-record-id="${record.id}">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                                 <div style="font-weight: bold; color: ${textColor};">${record.date} ${record.time}</div>
                                 <div style="display: flex; align-items: center; gap: 10px;">
                                     <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'};">${weekdayNames[record.weekday]}</div>
-                                    ${isMultiSelectMode ? `<div class="selection-box" 
-                                        style="width: 18px; height: 18px; border: 1.5px solid #007aff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; margin-left: 10px; z-index: 1000; position: relative; cursor: pointer; ${selectionStyle}" 
+                                    ${isMultiSelectMode ? `<span class="selection-wrapper"><div class="selection-box${isSelected ? ' selected' : ''}"
                                         onclick="event.stopPropagation(); toggleRecordSelection('${record.id}');"
-                                        onmousedown="event.stopPropagation();"
-                                        onmouseup="event.stopPropagation();">${selectionIcon}</div>` : ''}
+                                        onpointerdown="event.stopPropagation();"
+                                        onpointerup="event.stopPropagation();">${selectionIcon}</div></span>` : ''}
                                 </div>
                             </div>
                             <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'}; margin-bottom: 5px;">来自: ${record.phoneNumber}</div>
@@ -1396,38 +1453,261 @@
                     </div>
                 `;
             });
+
+            // 增量加载：还有未显示的记录时显示"加载更多"按钮
+            if (sortedRecords.length > currentPageSize) {
+                var remaining = sortedRecords.length - currentPageSize;
+                recordsHTML += `
+                    <div class="load-more-btn" id="loadMoreBtn"
+                         onclick="loadMoreRecords()"
+                         style="text-align: center; padding: 16px; margin: 12px 10px;
+                                background: #f8f8f8; border: 1px solid #ddd; border-radius: 5px;
+                                color: #007aff; font-size: 14px; cursor: pointer;
+                                -webkit-tap-highlight-color: rgba(0,122,255,.1);">
+                        加载更多（还有 <strong style="color:#ff4444;">${remaining}</strong> 条）
+                    </div>
+                `;
+            }
         }
-        
+
         recordsList.innerHTML = recordsHTML;
-        
-        // 绑定触摸事件监听器
-        bindTouchEvents();
     }
 
+    // 加载更多：每次增加 PAGE_SIZE 条
+    function loadMoreRecords() {
+        var sortedRecords = getSortedRecordsDesc();
+        // 上限保护：防止超过总数
+        if (currentPageSize >= sortedRecords.length) {
+            return;
+        }
+        currentPageSize += PAGE_SIZE;
+        // 不超过总数
+        if (currentPageSize > sortedRecords.length) {
+            currentPageSize = sortedRecords.length;
+        }
+        renderRecordsList();
+        console.log('加载更多，当前显示：' + currentPageSize + ' / ' + sortedRecords.length);
+    }
+    // 暴露到 window，让 onclick="loadMoreRecords()" 能访问
+    window.loadMoreRecords = loadMoreRecords;
+
     // 绑定触摸和鼠标事件监听器
-    function bindTouchEvents() {
-        var recordItems = document.querySelectorAll('.records-item');
-        recordItems.forEach(function(item) {
-            // 移除之前的事件监听器
-            item.removeEventListener('touchstart', handleTouchStart);
-            item.removeEventListener('touchmove', handleTouchMove);
-            item.removeEventListener('touchend', handleTouchEnd);
-            item.removeEventListener('mousedown', handleMouseDownForSwipe);
-            item.removeEventListener('mousemove', handleMouseMoveForSwipe);
-            item.removeEventListener('mouseup', handleMouseUpForSwipe);
-            item.removeEventListener('mouseleave', handleMouseLeaveForSwipe);
-            
-            // 添加触摸事件监听器，使用更安全的方式
-            item.addEventListener('touchstart', handleTouchStart, { passive: true });
-            item.addEventListener('touchmove', handleTouchMove, { passive: false });
-            item.addEventListener('touchend', handleTouchEnd, { passive: true });
-            
-            // 添加鼠标事件监听器（用于桌面端）
-            item.addEventListener('mousedown', handleMouseDownForSwipe, { passive: true });
-            item.addEventListener('mousemove', handleMouseMoveForSwipe, { passive: true });
-            item.addEventListener('mouseup', handleMouseUpForSwipe, { passive: true });
-            item.addEventListener('mouseleave', handleMouseLeaveForSwipe, { passive: true });
-        });
+    // 优化：统一用 PointerEvent 委托（替代原 touch+mouse 双轨）
+    // 用事件委托绑在 recordsList 容器上，对动态生成的 .records-item 自动生效，
+    // 不需要在 generateRecordsList 每次重新绑定。
+    function bindPointerEvents() {
+        var recordsListEl = document.getElementById('recordsList');
+        if (!recordsListEl) return;
+        // 解绑防重复
+        recordsListEl.removeEventListener('pointerdown',   onPointerDownDelegated);
+        recordsListEl.removeEventListener('pointermove',   onPointerMoveDelegated);
+        recordsListEl.removeEventListener('pointerup',     onPointerUpDelegated);
+        recordsListEl.removeEventListener('pointercancel', onPointerCancelDelegated);
+        // 委托绑定
+        recordsListEl.addEventListener('pointerdown',   onPointerDownDelegated,   { passive: true });
+        recordsListEl.addEventListener('pointermove',   onPointerMoveDelegated,   { passive: false });
+        recordsListEl.addEventListener('pointerup',     onPointerUpDelegated,     { passive: true });
+        recordsListEl.addEventListener('pointercancel', onPointerCancelDelegated, { passive: true });
+    }
+
+    // 委托入口：用 closest 找到真正按下的 .records-item
+    function onPointerDownDelegated(e) {
+        var item = e.target.closest('.records-item');
+        if (!item || !e.currentTarget.contains(item)) return;
+        // 模拟 e.currentTarget 让 onPointerDown 内部逻辑保持不变
+        try { Object.defineProperty(e, 'currentTarget', { value: item, configurable: true }); } catch (_) {}
+        onPointerDown(e);
+    }
+    function onPointerMoveDelegated(e) {
+        if (!GESTURE.activeItem) return;
+        var item = e.target.closest('.records-item');
+        if (!item || item !== GESTURE.activeItem) return;
+        try { Object.defineProperty(e, 'currentTarget', { value: item, configurable: true }); } catch (_) {}
+        onPointerMove(e);
+    }
+    function onPointerUpDelegated(e) {
+        if (!GESTURE.activeItem) return;
+        var item = e.target.closest('.records-item');
+        if (!item || item !== GESTURE.activeItem) return;
+        try { Object.defineProperty(e, 'currentTarget', { value: item, configurable: true }); } catch (_) {}
+        onPointerUp(e);
+    }
+    function onPointerCancelDelegated(e) {
+        if (!GESTURE.activeItem) return;
+        var item = e.target.closest('.records-item');
+        if (!item || item !== GESTURE.activeItem) return;
+        try { Object.defineProperty(e, 'currentTarget', { value: item, configurable: true }); } catch (_) {}
+        onPointerCancel(e);
+    }
+
+    // 优化：PointerEvent 入口
+    function onPointerDown(e) {
+        if (e.button !== undefined && e.button !== 0) return; // 仅主键
+        var item = e.currentTarget;
+        var p = e;
+        try { item.setPointerCapture(p.pointerId); } catch (_) {}
+
+        GESTURE.pointerId   = p.pointerId;
+        GESTURE.activeItem  = item;
+        GESTURE.startX = GESTURE.currentX = p.clientX;
+        GESTURE.startY = GESTURE.currentY = p.clientY;
+        GESTURE.startT = Date.now();
+        GESTURE.intent = 'pending';
+        GESTURE.longPressFired = false;
+
+        item.classList.add('gesture-active');
+
+        // 启动长按候选（非多选模式）
+        if (!isMultiSelectMode) {
+            clearTimeout(GESTURE.longPressTimer);
+            GESTURE.longPressTimer = setTimeout(function() {
+                if (GESTURE.intent === 'pending') {
+                    GESTURE.longPressFired = true;
+                    GESTURE.intent = 'long-press';
+                    // 注：长按震动反馈已移除。
+                    // navigator.vibrate 必须在用户手势同步上下文中调用，
+                    // setTimeout 异步回调里会被 Chrome 拦截并打印
+                    // "Blocked call to navigator.vibrate" 错误到控制台，
+                    // try/catch 也无法捕获（属于 Chrome 内部日志非 JS 异常）。
+                    enterMultiSelectMode(item.dataset.recordId);
+                    item.classList.remove('gesture-active');
+                }
+            }, TH.LONG_PRESS_MS);
+        }
+    }
+
+    // 优化：移动过程仲裁意图
+    function onPointerMove(e) {
+        if (e.pointerId !== GESTURE.pointerId) return;
+        var item = GESTURE.activeItem;
+        if (!item) return;
+        GESTURE.currentX = e.clientX;
+        GESTURE.currentY = e.clientY;
+        var dx = GESTURE.currentX - GESTURE.startX;
+        var dy = GESTURE.currentY - GESTURE.startY;
+        var dist = Math.hypot(dx, dy);
+        var wasSwiped = item.classList.contains('swiped');
+
+        // 任意方向超过阈值即取消长按候选
+        if (dist > TH.LONG_PRESS_CANCEL_MOVE) {
+            clearTimeout(GESTURE.longPressTimer);
+        }
+
+        // 仅在 pending 状态下仲裁，意图一旦确定不再回退
+        if (GESTURE.intent === 'pending' && dist > TH.TAP_MAX_MOVE) {
+            if (Math.abs(dy) > Math.abs(dx) * TH.SLOPE_RATIO) {
+                GESTURE.intent = 'v-scroll';             // 垂直滚动让出
+            } else if (Math.abs(dy) < TH.SWIPE_MAX_Y) {
+                // 水平滑动：左滑任意；右滑只有在已打开删除时（撤销）
+                if (dx < 0 || (dx > 0 && wasSwiped)) {
+                    GESTURE.intent = 'h-swipe';
+                } else {
+                    GESTURE.intent = 'v-scroll';
+                }
+            } else {
+                GESTURE.intent = 'v-scroll';
+            }
+        }
+
+        // 仅在 h-swipe 状态下才拦截默认行为 + 移动 transform
+        if (GESTURE.intent === 'h-swipe' && !isMultiSelectMode) {
+            e.preventDefault();
+            // baseX：已打开时基线为 -SWIPE_MAX_X，否则为 0
+            var baseX = wasSwiped ? -TH.SWIPE_MAX_X : 0;
+            var targetX = baseX + dx;
+            // 限制在 [-SWIPE_MAX_X, 0] 范围内
+            if (targetX > 0) targetX = 0;
+            if (targetX < -TH.SWIPE_MAX_X) targetX = -TH.SWIPE_MAX_X;
+            item.style.transform = 'translateX(' + targetX + 'px)';
+            if (!item.classList.contains('swiping')) {
+                item.classList.add('swiping');
+            }
+        }
+    }
+
+    // 优化：抬起收尾（无 setTimeout 延迟）
+    function onPointerUp(e) {
+        if (e.pointerId !== GESTURE.pointerId) return;
+        clearTimeout(GESTURE.longPressTimer);
+
+        var item = GESTURE.activeItem;
+        if (!item) {
+            resetGesture();
+            return;
+        }
+        var dx = GESTURE.currentX - GESTURE.startX;
+        var dy = GESTURE.currentY - GESTURE.startY;
+        var dist = Math.hypot(dx, dy);
+        var dt = Date.now() - GESTURE.startT;
+        var wasSwiped = item.classList.contains('swiped');
+
+        item.classList.remove('gesture-active');
+
+        if (GESTURE.longPressFired) {
+            // 长按已触发多选，本次 up 吞掉
+        } else if (isMultiSelectMode) {
+            // 多选模式：无论意图是什么，pointerup 都视为点击，触发 toggleRecordSelection
+            // 否则手指轻微移动就会让 onPointerMove 仲裁成 v-scroll，导致不触发点击
+            handleRecordClick(item.dataset.recordId);
+        } else if (GESTURE.intent === 'h-swipe') {
+            // 非多选模式下的滑动收尾：根据当前最终位置决定落点
+            var currentX = 0;
+            var m = item.style.transform.match(/-?[\d.]+/);
+            if (m) currentX = parseFloat(m[0]);
+
+            if (wasSwiped) {
+                // 已打开状态：右滑超过 SWIPE_MIN_X 就关闭，否则保持打开
+                if (currentX > -TH.SWIPE_MAX_X + TH.SWIPE_MIN_X) {
+                    // 关闭：回 0
+                    item.style.transform = 'translateX(0)';
+                    item.classList.remove('swiped');
+                    item.classList.remove('swiping');
+                } else {
+                    // 保持打开
+                    item.style.transform = 'translateX(-' + TH.SWIPE_MAX_X + 'px)';
+                    item.classList.remove('swiping');
+                    item.classList.add('swiped');
+                }
+            } else {
+                // 关闭状态：左滑超过 SWIPE_MIN_X 就打开，否则回 0
+                if (currentX < -TH.SWIPE_MIN_X) {
+                    // 打开
+                    resetOtherSwipeStates(item.dataset.recordId);
+                    item.style.transform = 'translateX(-' + TH.SWIPE_MAX_X + 'px)';
+                    item.classList.remove('swiping');
+                    item.classList.add('swiped');
+                } else {
+                    // 未达阈值：回 0
+                    item.style.transform = 'translateX(0)';
+                    item.classList.remove('swiping');
+                }
+            }
+        } else if (dist < TH.TAP_MAX_MOVE && dt < 500) {
+            // 非多选模式下的 tap
+            handleRecordClick(item.dataset.recordId);
+        }
+
+        try { item.releasePointerCapture(GESTURE.pointerId); } catch (_) {}
+        resetGesture();
+    }
+
+    // 优化：手势被打断（系统事件/来电）容错
+    function onPointerCancel(e) {
+        clearTimeout(GESTURE.longPressTimer);
+        var item = GESTURE.activeItem;
+        if (item) {
+            item.style.transform = '';
+            item.classList.remove('swiping');
+            item.classList.remove('gesture-active');
+        }
+        resetGesture();
+    }
+
+    function resetGesture() {
+        GESTURE.activeItem = null;
+        GESTURE.pointerId = null;
+        GESTURE.intent = 'pending';
+        GESTURE.longPressFired = false;
     }
 
     // 切换年份
@@ -1515,7 +1795,7 @@
                 
                 <div style="margin-bottom: 15px;">
                     <div style="font-weight: bold; color: ${textColor}; margin-bottom: 8px;">短信内容：</div>
-                    <div style="background: ${bgColor}; padding: 10px; border-radius: 5px; line-height: 1.5; color: ${textColor}; white-space: pre-wrap; word-break: break-all;">${record.content}</div>
+                    <div style="background: ${bgColor}; padding: 10px; border-radius: 5px; line-height: 1.5; color: ${textColor}; white-space: pre-wrap; word-break: break-all;">${escapeHtml(record.content)}</div>
                 </div>
                 
                 <div style="text-align: center; display: flex; gap: 10px; justify-content: center;">
@@ -1596,143 +1876,17 @@
 
 
 
-    // 触摸开始处理
-    function handleTouchStart(event) {
-        if (isMultiSelectMode) return; // 多选模式下禁用滑动删除
-        
-        var touch = event.touches[0];
-        var recordItem = event.currentTarget;
-        var recordId = recordItem.getAttribute('data-record-id');
-        
-        recordItem.setAttribute('data-touch-start-x', touch.clientX);
-        recordItem.setAttribute('data-touch-start-y', touch.clientY);
-        recordItem.setAttribute('data-touch-current-x', touch.clientX);
-        recordItem.setAttribute('data-touch-current-y', touch.clientY);
-        recordItem.setAttribute('data-is-touching', 'true');
-        
-        isSwipeInProgress = false; // 重置滑动状态
-        
-        // 同时触发长按逻辑
-        handleMouseDown(event, recordId);
-        // 不要在touchstart中调用preventDefault
-    }
-
-
-
-    // 鼠标按下处理（也处理触摸事件）
-    function handleMouseDown(event, recordId) {
-        // 获取正确的坐标（支持触摸和鼠标）
-        var clientY = event.clientY || (event.touches && event.touches[0] ? event.touches[0].clientY : 0);
-        
-        touchStartY = clientY;
-        touchStartTime = Date.now();
-        hasMoved = false;
-        
-        // 添加长按视觉反馈
-        var element = event.target.closest('.records-item');
-        if (element) {
-            element.classList.add('long-pressing');
-        }
-        
-        // 开始长按计时器
-        longPressTimer = setTimeout(function() {
-            if (!hasMoved && !isMultiSelectMode && !isSwipeInProgress) {
-                enterMultiSelectMode(recordId);
-            }
-        }, longPressThreshold);
-    }
-
-    // 鼠标移动处理（也处理触摸事件）
-    function handleMouseMove(event) {
-        if (longPressTimer) {
-            // 获取正确的坐标（支持触摸和鼠标）
-            var clientY = event.clientY || (event.touches && event.touches[0] ? event.touches[0].clientY : 0);
-            var moveDistance = Math.abs(clientY - touchStartY);
-            
-            if (moveDistance > moveThreshold) {
-                hasMoved = true;
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-                
-                // 移除长按视觉反馈
-                var element = document.querySelector('.records-item.long-pressing');
-                if (element) {
-                    element.classList.remove('long-pressing');
-                }
-            }
-        }
-    }
-
-    // 鼠标抬起处理
-    function handleMouseUp(event, recordId) {
-        var touchDuration = Date.now() - touchStartTime;
-        
-        // 移除长按视觉反馈
-        var element = event.target.closest('.records-item');
-        if (element) {
-            element.classList.remove('long-pressing');
-        }
-        
-        if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
-        
-        // 新增：如果刚刚长按进入多选，则本次不处理点击
-        if (justEnteredMultiSelectByLongPress) {
-            justEnteredMultiSelectByLongPress = false;
-            return;
-        }
-        
-        // 如果没有移动且时间足够短，则认为是点击
-        if (!hasMoved && touchDuration < longPressThreshold) {
-            handleRecordClick(recordId);
-        }
-        
-        // 重置状态
-        hasMoved = false;
-        touchStartY = 0;
-        touchStartTime = 0;
-    }
-
-    // 鼠标离开处理
-    function handleMouseLeave() {
-        // 移除长按视觉反馈
-        var element = document.querySelector('.records-item.long-pressing');
-        if (element) {
-            element.classList.remove('long-pressing');
-        }
-        
-        if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
-        hasMoved = false;
-        touchStartY = 0;
-        touchStartTime = 0;
-    }
-
     // 处理记录点击
     function handleRecordClick(recordId) {
-        // 检查是否在滑动状态或记录项正在滑动中
-        if (isSwipeInProgress) {
-            return; // 如果正在滑动，不触发点击事件
-        }
-        
-        var recordItem = document.querySelector(`[data-record-id="${recordId}"]`);
-        if (!recordItem) {
-            return;
-        }
-        
-        // 如果记录项正在滑动中或已滑动显示删除按钮，不触发点击事件
-        if (recordItem.classList.contains('swiping') || recordItem.classList.contains('swiped')) {
-            return;
-        }
-        
+        // 注：isSwipeInProgress 检查已移除，由 onPointerUp 的 intent 仲裁保证
+        // 只有真正判定为 tap 的 pointerup 才会进入此函数
         if (isMultiSelectMode) {
-            // 在多选模式下，点击整行记录都可以切换选择状态
             toggleRecordSelection(recordId);
         } else {
+            var recordItem = document.querySelector('[data-record-id="' + recordId + '"]');
+            if (recordItem && (recordItem.classList.contains('swiping') || recordItem.classList.contains('swiped'))) {
+                return;
+            }
             showRecordDetail(recordId);
         }
     }
@@ -1750,27 +1904,31 @@
     function enterMultiSelectMode(preSelectRecordId) {
         isMultiSelectMode = true;
         selectedRecords = [];
-        
+
         // 如果指定了要预先选中的记录，则添加到选中列表
         if (preSelectRecordId) {
             selectedRecords.push(preSelectRecordId);
             justEnteredMultiSelectByLongPress = true;
         }
-        
+
         document.getElementById('multiSelectBtn').textContent = '退出多选';
         document.getElementById('multiSelectBtn').style.background = '#ff8800';
         document.getElementById('multiSelectActions').style.display = 'block';
         updateSelectedCount();
-        
-        // 重置所有滑动状态
-        resetAllSwipeStates();
-        
-        // 设置stats-list区域的margin-bottom以避免被底部操作栏遮挡
-        var statsList = document.querySelector('.stats-list');
-        if (statsList) {
-            statsList.style.marginBottom = '100px';
+
+        // 给 recordsList 加 class，触发 CSS 隐藏删除按钮（兜底）
+        var recordsListEl = document.getElementById('recordsList');
+        if (recordsListEl) {
+            recordsListEl.classList.add('records-list-multi-select');
         }
-        
+
+        // 重置所有滑动状态（防御性：处理所有 .records-item 而非仅 swiped/swiping）
+        resetAllSwipeStates();
+
+        // 注：底部操作栏 #multiSelectActions 是 position: fixed，不占据文档流，
+        // 不需要给 stats-list/records-list 额外留 margin/padding。
+        // recordsList 的 padding-bottom 由 CSS .records-list-multi-select 类控制（60px）。
+
         generateRecordsList(); // 重新生成列表以显示选择框
     }
 
@@ -1781,16 +1939,18 @@
         document.getElementById('multiSelectBtn').textContent = '多选删除';
         document.getElementById('multiSelectBtn').style.background = '#007aff';
         document.getElementById('multiSelectActions').style.display = 'none';
-        
+
+        // 移除 recordsList 的多选 class，恢复删除按钮可见
+        var recordsListEl = document.getElementById('recordsList');
+        if (recordsListEl) {
+            recordsListEl.classList.remove('records-list-multi-select');
+        }
+
         // 重置所有滑动状态
         resetAllSwipeStates();
-        
-        // 移除stats-list区域的margin-bottom
-        var statsList = document.querySelector('.stats-list');
-        if (statsList) {
-            statsList.style.marginBottom = '0px';
-        }
-        
+
+        // 退出多选无需重置 stats-list marginBottom（之前的多余代码已删除）
+
         generateRecordsList(); // 重新生成列表以隐藏选择框
     }
 
@@ -2231,267 +2391,9 @@
         }
     });
 
-    // 触摸事件处理 - 滑动删除功能
-    function handleTouchStart(event) {
-        if (isMultiSelectMode) return; // 多选模式下禁用滑动删除
-        
-        var touch = event.touches[0];
-        var recordItem = event.currentTarget;
-        var recordId = recordItem.getAttribute('data-record-id');
-        
-        recordItem.setAttribute('data-touch-start-x', touch.clientX);
-        recordItem.setAttribute('data-touch-start-y', touch.clientY);
-        recordItem.setAttribute('data-touch-current-x', touch.clientX);
-        recordItem.setAttribute('data-touch-current-y', touch.clientY);
-        recordItem.setAttribute('data-is-touching', 'true');
-        
-        isSwipeInProgress = false; // 重置滑动状态
-        
-        // 同时触发长按逻辑
-        handleMouseDown(event, recordId);
-        // 不要在touchstart中调用preventDefault
-    }
-
-    function handleTouchMove(event) {
-        var touch = event.touches[0];
-        var recordItem = event.currentTarget;
-        
-        if (recordItem.getAttribute('data-is-touching') !== 'true') return;
-        
-        // 更新当前触摸位置
-        recordItem.setAttribute('data-touch-current-x', touch.clientX);
-        recordItem.setAttribute('data-touch-current-y', touch.clientY);
-        
-        if (isMultiSelectMode) {
-            // 多选模式下只记录位置，不处理滑动
-            return;
-        }
-        
-        // 非多选模式下的滑动删除逻辑
-        var startX = parseInt(recordItem.getAttribute('data-touch-start-x'));
-        var currentX = parseInt(recordItem.getAttribute('data-touch-current-x'));
-        var startY = parseInt(recordItem.getAttribute('data-touch-start-y'));
-        var currentY = parseInt(recordItem.getAttribute('data-touch-current-y'));
-        
-        var deltaX = currentX - startX;
-        var deltaY = Math.abs(currentY - startY);
-        
-        // 同时触发长按移动逻辑
-        handleMouseMove(event);
-        
-        // 只处理水平滑动，垂直滑动距离不能太大
-        if (deltaY < 50 && deltaX < 0) {
-            var swipeDistance = Math.min(Math.abs(deltaX), 80);
-            recordItem.style.transform = `translateX(-${swipeDistance}px)`;
-            recordItem.classList.add('swiping');
-            isSwipeInProgress = true; // 标记正在滑动
-            // 只有在实际进行滑动时才阻止默认滚动
-            if (event.cancelable) {
-                event.preventDefault();
-            }
-        }
-    }
-
-    function handleTouchEnd(event) {
-        var recordItem = event.currentTarget;
-        var recordId = recordItem.getAttribute('data-record-id');
-        
-        // 新增：如果刚刚长按进入多选，则本次不处理点击
-        if (justEnteredMultiSelectByLongPress) {
-            justEnteredMultiSelectByLongPress = false;
-            return;
-        }
-        
-        if (isMultiSelectMode) {
-            // 多选模式下，直接处理点击事件
-            if (recordItem.getAttribute('data-is-touching') === 'true') {
-                var startX = parseInt(recordItem.getAttribute('data-touch-start-x'));
-                var currentX = parseInt(recordItem.getAttribute('data-touch-current-x'));
-                var startY = parseInt(recordItem.getAttribute('data-touch-start-y'));
-                var currentY = parseInt(recordItem.getAttribute('data-touch-current-y'));
-                
-                var deltaX = Math.abs(currentX - startX);
-                var deltaY = Math.abs(currentY - startY);
-                
-                // 如果移动距离很小，认为是点击
-                if (deltaX < 20 && deltaY < 20) {
-                    handleRecordClick(recordId);
-                }
-            }
-            return;
-        }
-        
-        // 非多选模式下的滑动删除逻辑
-        if (recordItem.getAttribute('data-is-touching') !== 'true') return;
-        
-        var startX = parseInt(recordItem.getAttribute('data-touch-start-x'));
-        var currentX = parseInt(recordItem.getAttribute('data-touch-current-x'));
-        var swipeThreshold = parseInt(recordItem.getAttribute('data-swipe-threshold'));
-        
-        var deltaX = currentX - startX;
-        
-        // 移除滑动状态
-        recordItem.classList.remove('swiping');
-        
-        // 如果滑动距离超过阈值，显示删除按钮
-        if (deltaX < -swipeThreshold) {
-            // 先重置其他项的滑动状态，确保只有当前项显示删除按钮
-            resetOtherSwipeStates(recordId);
-            // 使用transform实现平滑过渡到显示删除按钮的位置
-            recordItem.style.transform = 'translateX(-80px)';
-            // 添加延迟以确保过渡动画完成后再添加swiped类
-            setTimeout(function() {
-                recordItem.classList.add('swiped');
-            }, 300);
-        } else {
-            // 平滑过渡回原始位置
-            recordItem.style.transform = 'translateX(0)';
-            // 添加延迟以确保过渡动画完成后再移除swiped类
-            setTimeout(function() {
-                recordItem.classList.remove('swiped');
-            }, 300);
-        }
-        
-        recordItem.setAttribute('data-is-touching', 'false');
-        // 延迟重置滑动状态，确保动画完成
-        setTimeout(function() {
-            isSwipeInProgress = false; // 重置滑动状态
-        }, 300);
-        
-        // 同时触发长按结束逻辑
-        handleMouseUp(event, recordId);
-    }
-
-    // 鼠标事件处理 - 滑动删除功能（桌面端支持）
-    function handleMouseDownForSwipe(event) {
-        var recordItem = event.currentTarget;
-        var recordId = recordItem.getAttribute('data-record-id');
-        
-        // 记录鼠标开始位置
-        recordItem.setAttribute('data-mouse-start-x', event.clientX);
-        recordItem.setAttribute('data-mouse-start-y', event.clientY);
-        recordItem.setAttribute('data-mouse-current-x', event.clientX);
-        recordItem.setAttribute('data-mouse-current-y', event.clientY);
-        recordItem.setAttribute('data-is-mousing', 'true');
-        
-        // 同时触发长按逻辑
-        handleMouseDown(event, recordId);
-        // 不要在mousedown中调用preventDefault
-    }
-
-    function handleMouseMoveForSwipe(event) {
-        var recordItem = event.currentTarget;
-        
-        if (recordItem.getAttribute('data-is-mousing') !== 'true') return;
-        
-        // 更新当前鼠标位置
-        recordItem.setAttribute('data-mouse-current-x', event.clientX);
-        recordItem.setAttribute('data-mouse-current-y', event.clientY);
-        
-        if (isMultiSelectMode) {
-            // 多选模式下只记录位置，不处理滑动
-            return;
-        }
-        
-        // 非多选模式下的滑动删除逻辑
-        var startX = parseInt(recordItem.getAttribute('data-mouse-start-x'));
-        var currentX = parseInt(recordItem.getAttribute('data-mouse-current-x'));
-        var startY = parseInt(recordItem.getAttribute('data-mouse-start-y'));
-        var currentY = parseInt(recordItem.getAttribute('data-mouse-current-y'));
-        
-        var deltaX = currentX - startX;
-        var deltaY = Math.abs(currentY - startY);
-        
-        // 同时触发长按移动逻辑
-        handleMouseMove(event);
-        
-        // 只处理水平滑动，垂直滑动距离不能太大
-        if (deltaY < 50 && deltaX < 0) {
-            var swipeDistance = Math.min(Math.abs(deltaX), 80);
-            recordItem.style.transform = `translateX(-${swipeDistance}px)`;
-            recordItem.classList.add('swiping');
-            isSwipeInProgress = true; // 标记正在滑动
-        }
-        // 不要在mousemove中调用preventDefault
-    }
-
-    function handleMouseUpForSwipe(event) {
-        var recordItem = event.currentTarget;
-        var recordId = recordItem.getAttribute('data-record-id');
-        
-        if (isMultiSelectMode) {
-            // 多选模式下，直接处理点击事件
-            if (recordItem.getAttribute('data-is-mousing') === 'true') {
-                var startX = parseInt(recordItem.getAttribute('data-mouse-start-x'));
-                var currentX = parseInt(recordItem.getAttribute('data-mouse-current-x'));
-                var startY = parseInt(recordItem.getAttribute('data-mouse-start-y'));
-                var currentY = parseInt(recordItem.getAttribute('data-mouse-current-y'));
-                
-                var deltaX = Math.abs(currentX - startX);
-                var deltaY = Math.abs(currentY - startY);
-                
-                // 如果移动距离很小，认为是点击
-                if (deltaX < 10 && deltaY < 10) {
-                    handleRecordClick(recordId);
-                }
-            }
-            return;
-        }
-        
-        // 非多选模式下的滑动删除逻辑
-        if (recordItem.getAttribute('data-is-mousing') !== 'true') return;
-        
-        var startX = parseInt(recordItem.getAttribute('data-mouse-start-x'));
-        var currentX = parseInt(recordItem.getAttribute('data-mouse-current-x'));
-        var swipeThreshold = parseInt(recordItem.getAttribute('data-swipe-threshold'));
-        
-        var deltaX = currentX - startX;
-        
-        // 移除滑动状态
-        recordItem.classList.remove('swiping');
-        
-        // 如果滑动距离超过阈值，显示删除按钮
-        if (deltaX < -swipeThreshold) {
-            // 先重置其他项的滑动状态，确保只有当前项显示删除按钮
-            resetOtherSwipeStates(recordId);
-            // 使用transform实现平滑过渡到显示删除按钮的位置
-            recordItem.style.transform = 'translateX(-80px)';
-            // 添加延迟以确保过渡动画完成后再添加swiped类
-            setTimeout(function() {
-                recordItem.classList.add('swiped');
-            }, 300);
-        } else {
-            // 平滑过渡回原始位置
-            recordItem.style.transform = 'translateX(0)';
-            // 添加延迟以确保过渡动画完成后再移除swiped类
-            setTimeout(function() {
-                recordItem.classList.remove('swiped');
-            }, 300);
-        }
-        
-        recordItem.setAttribute('data-is-mousing', 'false');
-        isSwipeInProgress = false; // 重置滑动状态
-        
-        // 同时触发长按结束逻辑
-        handleMouseUp(event, recordId);
-    }
-
-    function handleMouseLeaveForSwipe(event) {
-        if (isMultiSelectMode) return; // 多选模式下禁用滑动删除
-        
-        var recordItem = event.currentTarget;
-        
-        if (recordItem.getAttribute('data-is-mousing') === 'true') {
-            recordItem.classList.remove('swiping');
-            recordItem.classList.remove('swiped');
-            recordItem.style.transform = '';
-            recordItem.setAttribute('data-is-mousing', 'false');
-            // 延迟重置滑动状态，确保动画完成
-            setTimeout(function() {
-                isSwipeInProgress = false; // 重置滑动状态
-            }, 300);
-        }
-    }
+    // 注：原 handleTouchMove/handleTouchEnd + 4 个 handleMouseFor* 函数
+    // 已被 PointerEvent 重写方案（onPointerDown/Move/Up/Cancel + bindPointerEvents）
+    // 替代，详见 plan 文件。原 ~250 行状态机代码替换为 ~150 行统一指针处理。
 
     // 删除单条记录
     function deleteSingleRecord(recordId) {
@@ -2556,14 +2458,10 @@
         });
     }
 
-    // 重置所有滑动状态
+    // 重置所有滑动状态（防御性：处理所有 .records-item，兜底清掉任何残留 transform）
     function resetAllSwipeStates() {
-        document.querySelectorAll('.records-item.swiped').forEach(function(item) {
+        document.querySelectorAll('.records-item').forEach(function(item) {
             item.classList.remove('swiped');
-            item.style.transform = '';
-        });
-        
-        document.querySelectorAll('.records-item.swiping').forEach(function(item) {
             item.classList.remove('swiping');
             item.style.transform = '';
         });
@@ -2734,8 +2632,8 @@
                 // 去除ID展示
                 // content += '<span style="font-size: 12px; color: #666;">#' + record.id + '</span>';
                 content += '</div>';
-                content += '<div style="color: #666; font-size: 14px; line-height: 1.4;">' + record.content + '</div>';
-                content += '<div style="font-size: 12px; color: #999; margin-top: 5px;">来源：' + record.phoneNumber + '</div>';
+                content += '<div style="color: #666; font-size: 14px; line-height: 1.4;">' + escapeHtml(record.content) + '</div>';
+                content += '<div style="font-size: 12px; color: #999; margin-top: 5px;">来源：' + escapeHtml(record.phoneNumber) + '</div>';
                 content += '</div>';
             }
         });

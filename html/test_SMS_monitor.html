@@ -6,120 +6,612 @@
     <title>交警短信增强提醒</title>
     <link rel="stylesheet" href="../css/api.css">
     <style>
-        .container {padding: 15px;}
-        .switch-box {display: flex; justify-content: space-between; align-items: center; margin: 20px 0;}
-        .status {color: #666; font-size: 14px;}
-        .error {color: #ff4444; font-size: 12px; margin-top: 10px;}
-        .success {color: #44aa44; font-size: 12px; margin-top: 10px;}
-        .log-item {margin: 5px 0; padding: 5px; background: #f5f5f5; border-radius: 3px;}
-        .log-time {color: #999; font-size: 10px;}
-        .log-content {color: #333; font-size: 12px;}
-        .btn {padding: 10px 20px; margin: 5px; background: #007aff; color: white; border: none; border-radius: 5px; cursor: pointer;}
-        .btn:disabled {background: #ccc; cursor: not-allowed; opacity: 0.6;}
-        .btn:enabled:hover {background: #0056cc;}
-        .btn-small {padding: 5px 10px; font-size: 12px;}
-        .btn-danger {background: #ff4444;}
-        .btn-danger:hover {background: #cc0000;}
-        .settings {background: #f8f8f8; padding: 10px; border-radius: 5px; margin: 0px 0;}
-        .warning {background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 5px; margin: 10px 0; color: #856404;}
-        .button-group {display: flex; flex-wrap: wrap; gap: 10px; margin: 15px 0;}
-        .button-group .btn {flex: 1; min-width: 120px;}
-        .keyword-item {display: flex; align-items: center; margin: 5px 0; gap: 10px;}
-        .keyword-input {flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 3px;}
-        .logic-selector {margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;}
-        .logic-selector label {margin-right: 15px; font-weight: bold;}
-        .volume-control {margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;}
-        .volume-item {margin: 5px 0; display: flex; align-items: center; gap: 10px;}
-        .volume-item span {font-weight: bold; color: #007aff;}
-        
-        /* 删除按钮样式 */
-        .btn-delete {width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #ffffff;}
-        
-        /* 音量控制样式 */
-        .volume-slider {width: 150px; accent-color: #ff0000;}
-        .volume-value {color: #ff0000; font-weight: bold; min-width: 40px; text-align: right; display: inline-block;}
-        .current-volume-display {font-weight: bold; color: #007aff;}
-        
-        /* 防止音量显示抖动 */
-        .volume-item {margin: 5px 0; display: flex; align-items: center; gap: 10px; min-height: 30px;}
-        .volume-item span {font-weight: bold; color: #007aff; white-space: nowrap;}
-        
-        /* 其他样式 */
-        .add-keyword-btn {margin-top: 10px;}
-        .log-area {margin-top: 20px; max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa;}
-        .error-hidden {display: none;}
-
-        /* 音效控制样式 */
-        .sound-control {margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 5px;}
-        .sound-item {margin: 5px 0; display: flex; align-items: center; gap: 10px;}
-        .sound-selector {flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 3px;}
-        
-        /* 号码匹配样式 */
-        .number-disabled {color: #999; font-weight: normal;}
-        .number-enabled {color: #000; font-weight: bold;}
-        
-        /* 开关控制样式 */
-        .section-disabled {opacity: 0.5; pointer-events: none;}
-        .number-input-disabled {color: #999; }
-        .number-input-enabled {color: #000; }
-        
-        /* 适配框架页面 */
-        .container {
-            padding-bottom: 20px; /* 减少底部间距 */
+        /* ========== 基础变量（统一配色） ========== */
+        :root {
+            --color-primary: #007aff;
+            --color-success: #34c759;
+            --color-warning: #ff9500;
+            --color-danger: #ff3b30;
+            --color-text: #1c1c1e;
+            --color-text-secondary: #8e8e93;
+            --color-text-tertiary: #c7c7cc;
+            --color-bg: #f2f2f7;
+            --color-card: #ffffff;
+            --color-divider: #e5e5ea;
+            --color-master-off-bg: linear-gradient(135deg, #fff8f0 0%, #ffeaea 100%);
+            --color-master-on-bg: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,.06);
+            --shadow-md: 0 2px 8px rgba(0,0,0,.08);
+            --shadow-lg: 0 4px 16px rgba(0,0,0,.10);
         }
-        
-        /* 自定义开关样式 */
+
+        * { -webkit-tap-highlight-color: transparent; }
+        body { background: var(--color-bg); font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif; }
+
+        /* ========== 容器与卡片 ========== */
+        .container { padding: 10px 12px 16px; }
+        .card {
+            background: var(--color-card);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+            padding: 10px 14px;
+            margin-bottom: 8px;
+        }
+        .card-title {
+            font-size: 12px;
+            color: var(--color-text-secondary);
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: .3px;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .card-title::before {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 10px;
+            background: var(--color-primary);
+            border-radius: 2px;
+        }
+        .app-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--color-text);
+            margin: 4px 4px 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .app-title-icon {
+            width: 26px;
+            height: 26px;
+            background: linear-gradient(135deg, var(--color-primary), #5856d6);
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+            box-shadow: 0 2px 6px rgba(0,122,255,.3);
+        }
+        .app-subtitle {
+            font-size: 11px;
+            color: var(--color-text-secondary);
+            margin: -6px 4px 8px;
+        }
+
+        /* ========== 当前状态文字 ========== */
+        .status {
+            font-size: 12px;
+            color: var(--color-text-secondary);
+            padding: 4px 8px;
+            margin: 2px 0 8px;
+            font-weight: 500;
+            letter-spacing: .2px;
+        }
+
+        /* ========== 状态徽章 ========== */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            margin: 2px 0;
+        }
+        .status-badge::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        .status-badge.idle { background: #f2f2f7; color: var(--color-text-secondary); }
+        .status-badge.listening { background: rgba(52,199,89,.12); color: var(--color-success); }
+        .status-badge.alerting { background: rgba(255,59,48,.12); color: var(--color-danger); }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: .5; transform: scale(.8); }
+        }
+        .error { color: var(--color-danger); font-size: 12px; margin-top: 8px; }
+        .error-hidden { display: none; }
+
+        /* ========== 警告提示 ========== */
+        .warning {
+            background: rgba(255,149,0,.08);
+            border: 1px solid rgba(255,149,0,.2);
+            border-left: 3px solid var(--color-warning);
+            padding: 7px 10px;
+            border-radius: var(--radius-sm);
+            margin: 4px 0 8px;
+            color: #8a6500;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+        .warning strong { color: var(--color-warning); }
+
+        /* ========== 开关卡片行（统一格式） ========== */
+        .switch-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            gap: 12px;
+        }
+        .switch-box + .switch-box {
+            border-top: 1px solid var(--color-divider);
+        }
+
+        /* 总开关强调样式 */
+        .master-switch {
+            background: var(--color-master-off-bg);
+            border: 2px solid var(--color-danger);
+            border-radius: var(--radius-md);
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 8px rgba(255,59,48,.12);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .master-switch.on {
+            background: var(--color-master-on-bg);
+            border-color: var(--color-success);
+            box-shadow: 0 2px 8px rgba(52,199,89,.15);
+        }
+        .master-switch-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+        .master-switch .master-label {
+            font-weight: 700;
+            font-size: 15px;
+            color: var(--color-danger);
+            display: block;
+            white-space: nowrap;
+        }
+        .master-switch.on .master-label { color: #1f7a32; }
+        .master-switch .master-hint {
+            color: var(--color-text-secondary);
+            font-size: 10px;
+            margin-top: 2px;
+            line-height: 1.3;
+        }
+        .master-switch.on .master-hint { color: #3da654; }
+
+        /* 监听号码 - 不换行 */
+        .target-number-row {
+            flex-wrap: nowrap !important;
+        }
+        .nowrap-label {
+            white-space: nowrap;
+            flex-shrink: 0;
+            font-size: 14px;
+            color: var(--color-text);
+            font-weight: 500;
+        }
+        .target-number-input {
+            flex: 1;
+            min-width: 0;
+            text-align: center;
+            padding: 6px 10px;
+            border: 1px solid var(--color-divider);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            background: #fafafa;
+            transition: all .2s;
+        }
+        .target-number-input:focus {
+            background: white;
+            border-color: var(--color-primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0,122,255,.1);
+        }
+
+        /* 自定义 iOS 风格开关 */
         .switch {
             position: relative;
             display: inline-block;
-            width: 44px;
-            height: 24px;
-            background-color: #e0e0e0;
-            border-radius: 12px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 48px;
+            height: 28px;
+            background-color: #e5e5ea;
+            border-radius: 14px;
+            transition: background-color .3s cubic-bezier(.4,0,.2,1);
             cursor: pointer;
             border: none;
             outline: none;
             appearance: none;
             -webkit-appearance: none;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+            flex-shrink: 0;
         }
-        
-        .switch:checked {
-            background-color: #4CAF50;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1), 0 0 0 2px rgba(76, 175, 80, 0.2);
-        }
-        
-        .switch:not(:checked) {
-            background-color: #9e9e9e;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1), 0 0 0 2px rgba(158, 158, 158, 0.2);
-        }
-        
+        .switch:checked { background-color: var(--color-success); }
         .switch::before {
             content: '';
             position: absolute;
             top: 2px;
             left: 2px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            transition: transform .3s cubic-bezier(.4,0,.2,1);
+            box-shadow: 0 2px 4px rgba(0,0,0,.2), 0 1px 2px rgba(0,0,0,.1);
+        }
+        .switch:checked::before { transform: translateX(20px); }
+        .switch:active::before {
+            width: 28px;
+        }
+        .switch:checked:active::before {
+            margin-left: -4px;
+        }
+
+        /* ========== 字段标签（统一小标题） ========== */
+        .field-label {
+            display: block;
+            font-size: 11px;
+            color: var(--color-text-secondary);
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+
+        /* ========== 关键词区域 ========== */
+        .keyword-list { margin-bottom: 6px; }
+        .keyword-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+            gap: 8px;
+        }
+        .keyword-input {
+            flex: 1;
+            padding: 8px 10px;
+            border: 1px solid var(--color-divider);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            background: #fafafa;
+            transition: all .2s;
+        }
+        .keyword-input:focus {
+            background: white;
+            border-color: var(--color-primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0,122,255,.1);
+        }
+
+        /* 匹配逻辑 */
+        .logic-selector {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--color-divider);
+        }
+        .logic-selector .field-label { margin-bottom: 6px; }
+
+        /* 自定义 radio - 圆形 */
+        input[type="radio"] {
+            appearance: none;
+            -webkit-appearance: none;
             width: 20px;
             height: 20px;
-            background: linear-gradient(145deg, #ffffff, #f0f0f0);
             border-radius: 50%;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.1);
+            border: 2px solid var(--color-text-tertiary);
+            margin: 0;
+            cursor: pointer;
+            transition: all .2s;
+            position: relative;
+            vertical-align: middle;
+            flex-shrink: 0;
         }
-        
-        .switch:checked::before {
-            transform: translateX(20px);
+        input[type="radio"]:checked {
+            border-color: var(--color-primary);
+            background: var(--color-primary);
+            box-shadow: inset 0 0 0 3px white;
         }
-        
-        .switch:focus {
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1), 0 0 0 3px rgba(33, 150, 243, 0.3);
+
+        /* radio 选项组（水平排布，节省竖直空间） */
+        .radio-group {
+            display: flex;
+            flex-direction: row;
+            gap: 14px;
         }
-        
-        .switch:hover::before {
-            box-shadow: 0 3px 6px rgba(0,0,0,0.25), 0 2px 4px rgba(0,0,0,0.15);
+        /* 兜底：部分老 WebView 不支持 gap，用 margin-left 兼容 */
+        .radio-item + .radio-item { margin-left: 14px; }
+        .radio-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 12px;
+            background: #fafafa;
+            border: 1px solid var(--color-divider);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--color-text);
+            transition: all .15s;
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
         }
-        
+        .radio-item:has(input:checked) {
+            background: rgba(0,122,255,.06);
+            border-color: var(--color-primary);
+            color: var(--color-primary);
+            font-weight: 500;
+        }
+        .radio-item:active { background: rgba(0,122,255,.12); }
+
+        /* ========== 音量控制 ========== */
+        .volume-control {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .volume-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 2px 0;
+            font-size: 13px;
+        }
+        /* 兜底：兼容老 WebView（部分 Android WebView 不支持 flex gap） */
+        .volume-item > * + * { margin-left: 10px; }
+        .volume-item .label {
+            white-space: nowrap;
+            color: var(--color-text-secondary);
+            flex-shrink: 0;
+            min-width: 72px;
+        }
+        .volume-item .value {
+            font-weight: 700;
+            min-width: 38px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* 自定义滑轨（彻底重做） */
+        .volume-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            flex: 1;
+            min-width: 0;
+            height: 32px;
+            background: transparent;
+            outline: none;
+            margin: 0;
+            padding: 0;
+            cursor: pointer;
+        }
+        /* WebKit 滑轨（背景轨道） */
+        .volume-slider::-webkit-slider-runnable-track {
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(to right,
+                var(--color-primary) 0%,
+                var(--color-primary) var(--volume-percent, 30%),
+                #e5e5ea var(--volume-percent, 30%),
+                #e5e5ea 100%);
+        }
+        /* WebKit 滑块（圆形 thumb） */
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid var(--color-primary);
+            margin-top: -8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,.18), 0 0 0 6px rgba(0,122,255,.08);
+            cursor: pointer;
+            transition: transform .15s, box-shadow .15s;
+        }
+        .volume-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            box-shadow: 0 3px 8px rgba(0,0,0,.25), 0 0 0 8px rgba(0,122,255,.12);
+        }
+        .volume-slider::-webkit-slider-thumb:active {
+            transform: scale(1.25);
+            box-shadow: 0 4px 12px rgba(0,0,0,.3), 0 0 0 12px rgba(0,122,255,.15);
+        }
+        /* Firefox 兼容 */
+        .volume-slider::-moz-range-track {
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e5ea;
+        }
+        .volume-slider::-moz-range-progress {
+            height: 6px;
+            border-radius: 3px;
+            background: var(--color-primary);
+        }
+        .volume-slider::-moz-range-thumb {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid var(--color-primary);
+            box-shadow: 0 2px 6px rgba(0,0,0,.18);
+            cursor: pointer;
+        }
+
+        /* 音量当前值/警报音量值的配色 */
+        .current-volume-display { color: var(--color-primary); font-weight: 700; }
+        .volume-value { color: var(--color-primary); }
+
+        /* 防止音量显示抖动 */
+        .volume-item { min-height: 36px; }
+
+        /* ========== 音效选择 ========== */
+        .sound-selector-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 6px 0;
+            font-size: 14px;
+            color: var(--color-text);
+            flex-wrap: wrap;
+        }
+        .sound-selector-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+
+        /* ========== 通用按钮变体 ========== */
+        .btn {
+            padding: 10px 16px;
+            background: var(--color-primary);
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all .2s;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .btn:active { transform: scale(0.97); opacity: 0.85; }
+        .btn:disabled { background: var(--color-text-tertiary); cursor: not-allowed; opacity: 0.5; }
+        .btn-small { padding: 6px 12px; font-size: 13px; }
+        .btn-outline {
+            background: white;
+            color: var(--color-primary);
+            border: 1px solid var(--color-primary);
+        }
+        .btn-outline:active { background: rgba(0,122,255,.08); }
+        .btn-danger { background: var(--color-danger); }
+        .btn-danger:active { background: #d70015; }
+        .btn-success { background: var(--color-success); }
+        .btn-success:active { background: #248a3d; }
+        .btn-ghost {
+            background: var(--color-bg);
+            color: var(--color-text);
+        }
+
+        /* 按钮组（主页底部 3 个功能按钮） */
+        .button-group {
+            display: flex;
+            gap: 14px;
+            margin-top: 2px;
+        }
+        /* 兜底：兼容老 WebView（部分 Android WebView 不支持 flex gap） */
+        .button-group .btn + .btn { margin-left: 14px; }
+        .button-group .btn {
+            flex: 1;
+            min-width: 0;
+            padding: 9px 6px;
+            font-size: 13px;
+            border-radius: var(--radius-sm);
+        }
+        /* 操作按钮卡片：让按钮呼吸感更强 */
+        .button-card .btn-outline { padding: 9px 6px; }
+
+        /* 删除按钮（小圆） */
+        .btn-delete {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            line-height: 1;
+            color: white;
+            background: var(--color-danger);
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .btn-delete:active { background: #d70015; transform: scale(0.92); }
+
+        /* 添加关键词按钮（次要按钮） */
+        .add-keyword-btn {
+            width: 100%;
+            margin-top: 8px;
+            padding: 7px;
+            background: var(--color-bg);
+            color: var(--color-primary);
+            border: 1px dashed var(--color-primary);
+            font-size: 13px;
+            border-radius: var(--radius-sm);
+        }
+
+        /* ========== 音效选择 ========== */
+        .sound-control {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--color-divider);
+        }
+        .sound-control .field-label { margin-bottom: 6px; }
+        .btn-test-sound {
+            width: 100%;
+            margin-top: 8px;
+            padding: 8px;
+            font-size: 13px;
+        }
+
+        /* ========== 日志区 ========== */
+        .log-area {
+            max-height: 280px;
+            overflow-y: auto;
+            border-radius: var(--radius-md);
+            padding: 2px;
+            background: transparent;
+            /* 隐藏滚动条但保留功能（更简洁） */
+            scrollbar-width: thin;
+            scrollbar-color: var(--color-text-tertiary) transparent;
+        }
+        .log-area::-webkit-scrollbar { width: 4px; }
+        .log-area::-webkit-scrollbar-thumb { background: var(--color-text-tertiary); border-radius: 2px; }
+        .log-item {
+            margin: 3px 0;
+            padding: 6px 8px 6px 10px;
+            background: white;
+            border-radius: var(--radius-sm);
+            border-left: 3px solid var(--color-text-tertiary);
+            font-size: 11px;
+            line-height: 1.45;
+            box-shadow: var(--shadow-sm);
+            animation: logFadeIn .25s ease;
+        }
+        @keyframes logFadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .log-item.success { border-left-color: var(--color-success); }
+        .log-item.error   { border-left-color: var(--color-danger); }
+        .log-item.warning { border-left-color: var(--color-warning); }
+        .log-item.info    { border-left-color: var(--color-primary); }
+        .log-time {
+            color: var(--color-text-tertiary);
+            font-size: 9px;
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 1px;
+        }
+        .log-content { color: var(--color-text); }
+
+        /* ========== 兼容老结构（settings 包住多组开关时仍能用） ========== */
+        .settings {
+            background: var(--color-card);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+            padding: 4px 16px;
+            margin-bottom: 12px;
+        }
+
+        /* 号码匹配样式（启用/禁用颜色变化） */
+        .number-disabled { color: var(--color-text-secondary); font-weight: normal; }
+        .number-enabled { color: var(--color-text); font-weight: 600; }
+        .section-disabled { opacity: 0.45; pointer-events: none; }
+        .number-input-disabled { color: var(--color-text-tertiary); }
+        .number-input-enabled { color: var(--color-text); }
 
     </style>
 </head>
@@ -128,82 +620,91 @@
     <h1>交警短信增强提醒</h1>
     
     <div class="warning">
-        <strong>注意：</strong>需开启最高权限，如读取短信、关闭电源优化策略等。本应用不会联网，数据存储和分析均在本地，请放心使用。<br>
+        <strong>注意：</strong>需给本应用开启最高权限，如读取短信、关闭电源优化策略等以保障后台稳定运行。本应用不会联网，数据存储分析均在本地，可放心使用。<br>
     </div>
     
     <div class="settings">
-        <div class="switch-box">
-            <span>短信监听开关</span>
+        <div class="switch-box master-switch" id="masterSwitchBox">
+            <div class="master-switch-text">
+                <span class="master-label">短信监听提醒总开关</span>
+                <small class="master-hint">关闭后所有监听规则都不生效</small>
+            </div>
             <input type="checkbox" id="smsSwitch" class="switch">
         </div>
-        
-        <div class="switch-box">
-            <span>监听号码</span>
-            <input type="text" id="targetNumber" placeholder="例如: 12123" value="12123" style="text-align: center;">
+
+        <div class="switch-box target-number-row">
+            <span class="nowrap-label">监听号码</span>
+            <input type="text" id="targetNumber" placeholder="例如: 12123" value="12123" class="target-number-input" maxlength="20">
             <input type="checkbox" id="enableNumberMatch" class="switch" style="margin-left: 10px;">
         </div>
 
         
-        <div id="keywordSection">
-            <span>短信内容关键词：</span>
-            <div id="keywordList">
-                <div class="keyword-item">
-                    <input type="text" class="keyword-input" value="湖北交警" placeholder="输入关键词">
-                    <button class="btn btn-small btn-danger btn-delete" onclick="removeKeyword(this)">−</button>
+        <div class="card">
+            <div class="card-title">关键词规则</div>
+            <div id="keywordSection">
+                <div class="field-label">短信内容关键词</div>
+                <div id="keywordList">
+                    <div class="keyword-item">
+                        <input type="text" class="keyword-input" value="湖北交警" placeholder="输入关键词">
+                        <button class="btn btn-small btn-danger btn-delete" onclick="removeKeyword(this, 0)">−</button>
+                    </div>
+                    <div class="keyword-item">
+                        <input type="text" class="keyword-input" value="鄂AY366Q" placeholder="输入关键词">
+                        <button class="btn btn-small btn-danger btn-delete" onclick="removeKeyword(this, 1)">−</button>
+                    </div>
                 </div>
-                <div class="keyword-item">
-                    <input type="text" class="keyword-input" value="鄂AY366Q" placeholder="输入关键词">
-                    <button class="btn btn-small btn-danger btn-delete" onclick="removeKeyword(this)">−</button>
+                <button class="btn btn-small add-keyword-btn" onclick="addKeyword()">+ 添加关键词</button>
+            </div>
+            <div id="logicSection" class="logic-selector">
+                <span class="field-label">匹配逻辑</span>
+                <div class="radio-group">
+                    <label class="radio-item"><input type="radio" id="logicOr" name="logic" value="or" checked><span>逻辑或</span></label>
+                    <label class="radio-item"><input type="radio" id="logicAnd" name="logic" value="and"><span>逻辑与</span></label>
                 </div>
-            </div>
-            <button class="btn btn-small add-keyword-btn" onclick="addKeyword()">添加关键词</button>
-        </div>
-                
-        <div id="logicSection" class="logic-selector">
-            <label>关键词匹配：</label>
-            <input type="radio" id="logicOr" name="logic" value="or" checked>
-            <label for="logicOr">逻辑或</label>
-            <input type="radio" id="logicAnd" name="logic" value="and">
-            <label for="logicAnd">逻辑与</label>
-        </div>
-
-        <div class="volume-control">
-            <label>音量控制：</label>
-            <div class="volume-item">
-                <span>当前系统音量：</span>
-                <span id="currentVolume" class="current-volume-display">获取中...</span>
-                <button class="btn btn-small" onclick="refreshCurrentVolume()">刷新</button>
-            </div>
-            <div class="volume-item">
-                <span>设置警报音量：</span>
-                <input type="range" id="alertVolume" class="volume-slider" min="0" max="100" value="30">
-                <span id="alertVolumeValue" class="volume-value">30%</span>
             </div>
         </div>
 
-        <div class="sound-control">
-            <label>音效选择：</label>
-            <button class="btn btn-small" id="testSoundBtn" onclick="testSound()">试听</button>
-            <br>
-            <input type="radio" id="soundShort" name="sound" value="short_ring.mp3" checked>
-            <label for="soundShort">简短铃声</label>
-            <input type="radio" id="soundPolice" name="sound" value="policeCar_alert.mp3">
-            <label for="soundPolice">警车警报</label>
+        <div class="card">
+            <div class="card-title">警报音效</div>
+            <div class="volume-control">
+                <div class="volume-item">
+                    <span class="label">当前系统音量</span>
+                    <span id="currentVolume" class="current-volume-display value">获取中...</span>
+                    <button class="btn btn-small btn-outline" onclick="refreshCurrentVolume()">刷新</button>
+                </div>
+                <div class="volume-item">
+                    <span class="label">警报音量</span>
+                    <input type="range" id="alertVolume" class="volume-slider" min="0" max="100" value="50">
+                    <span id="alertVolumeValue" class="volume-value value">30%</span>
+                </div>
+            </div>
+            <div class="sound-control">
+                <div class="field-label">音效选择</div>
+                <div class="radio-group">
+                    <label class="radio-item"><input type="radio" id="soundShort" name="sound" value="short_ring.mp3" checked><span>简短铃声</span></label>
+                    <label class="radio-item"><input type="radio" id="soundPolice" name="sound" value="policeCar_alert.mp3"><span>警车警报</span></label>
+                </div>
+                <button class="btn btn-small btn-ghost btn-test-sound" id="testSoundBtn" onclick="testSound()">🔊 试听音效</button>
+            </div>
         </div>
     </div>
-    
+
     <div class="status" id="statusText">当前状态: 未监听</div>
     <div id="errorText" class="error error-hidden"></div>
-    
-    <div class="button-group">
-        <button class="btn" onclick="checkSMSPermission()">检查权限</button>
-        <button class="btn" onclick="clearLogs()">清空日志</button>
-        <button class="btn" onclick="manualTestAlert()">手动测试警报</button>
-        <!-- <button class="btn" onclick="stopAlert()">停止警报铃声</button> -->
-        <!-- <button class="btn" onclick="showStatistics()">查看统计</button> -->
+
+    <div class="card button-card">
+        <div class="card-title">操作</div>
+        <div class="button-group">
+            <button class="btn btn-outline" onclick="checkSMSPermission()">🔐 检查权限</button>
+            <button class="btn btn-outline" onclick="clearLogs()">🗑 清空日志</button>
+            <button class="btn btn-success" onclick="manualTestAlert()">🔔 手动测试警报</button>
+        </div>
     </div>
-    
-    <div id="logArea" class="log-area"></div>
+
+    <div class="card log-card">
+        <div class="card-title">运行日志</div>
+        <div id="logArea" class="log-area"></div>
+    </div>
 </div>
 
 <script src="../script/api.js"></script>
@@ -263,24 +764,50 @@
                 isPlaying = false;
                 updateStatusDisplay();
                 addLog('页面暂停，停止警报铃声', 'warning');
-                
+
                 // 恢复原始音量
                 restoreOriginalVolume();
             }
-            
+
             // 重置试听状态
             if (isTestPlaying) {
                 api.stopPlay();
                 isTestPlaying = false;
-                document.getElementById('testSoundBtn').textContent = '试听';
+                document.getElementById('testSoundBtn').textContent = '🔊 试听音效';
                 addLog('页面暂停，停止音效试听', 'warning');
-                
+
                 // 恢复原始音量
                 restoreOriginalVolume();
             }
-            // 页面暂停时释放互斥锁
-            window.__SMS_MONITOR_LOCK = false;
-            console.log('【SMS监听】实例释放锁:', window.__SMS_MONITOR_INSTANCE_ID);
+
+            // 注意（B6 修复）：pause 事件在 APICloud 中会在 frame 切换时触发，
+            // 此时主框架仍持有 __SMS_MONITOR_LOCK 引用，若在此处释放会导致
+            // frame 重新显示时不再注册监听 → 短信接收不到。
+            // 仅在 win 完全销毁（app 退出）时由 OS 回收锁，此处不再主动释放。
+        });
+
+        // 监听 APP 从后台切回前台（如解锁屏幕）
+        // 解决 MIUI 深度休眠后 BroadcastReceiver 失效、锁屏期间收到的短信
+        // 在解锁后才能被监听到的问题
+        api.addEventListener({
+            name: 'resume'
+        }, function(ret, err) {
+            addLog('APP 从后台恢复（resume），检查短信监听状态', 'info');
+            // 如果用户已开启监听，则重新注册以接管系统缓存的短信广播
+            if (isListening && smsListenerModule) {
+                doRegisterSMSListener('resume');
+            }
+        });
+
+        // appactive 是 APICloud 的另一组前台事件，与 resume 互补，
+        // 部分 MIUI 设备在某些情况下只触发 appactive 不触发 resume
+        api.addEventListener({
+            name: 'appactive'
+        }, function(ret, err) {
+            addLog('APP 进入活跃状态（appactive），检查短信监听状态', 'info');
+            if (isListening && smsListenerModule) {
+                doRegisterSMSListener('appactive');
+            }
         });
     };
 
@@ -297,6 +824,9 @@
             statusText.textContent = '当前状态: 监听中';
             // 启用相关区域
             enableSections();
+            // 总开关初始化为"开启"绿色高亮
+            var masterBox = document.getElementById('masterSwitchBox');
+            if (masterBox) masterBox.classList.add('on');
             // 延迟启动监听，确保模块已初始化
             setTimeout(function() {
                 startSMSListener();
@@ -308,16 +838,42 @@
         
         // 监听开关变化
         smsSwitch.addEventListener('change', function(e) {
+            // 同步震动反馈：在用户手势同步上下文中调用 vibrate 是允许的
+            // （异步 setTimeout 中调用会被 Chrome 拦截，但 change 事件是同步的）
+            try {
+                if (navigator.vibrate &&
+                    (!navigator.userActivation || navigator.userActivation.isActive)) {
+                    navigator.vibrate(e.target.checked ? [20, 30, 30] : 15);
+                }
+            } catch (_) { /* 静默 */ }
+
+            var masterBox = document.getElementById('masterSwitchBox');
             if(e.target.checked) {
                 statusText.textContent = '当前状态: 正在启动监听...';
                 startSMSListener();
                 // 启用相关区域
                 enableSections();
+                // 总开关强调样式：开启后变为绿色高亮
+                if (masterBox) masterBox.classList.add('on');
+                // Toast 反馈（global: true 跨 frame 显示）
+                api.toast({
+                    msg: '✅ 已开启短信监听',
+                    duration: 2000,
+                    location: 'middle'
+                });
             } else {
                 statusText.textContent = '当前状态: 已停止监听';
                 stopSMSListener();
                 // 禁用相关区域
                 disableSections();
+                // 总开关强调样式：关闭后回到红色警示
+                if (masterBox) masterBox.classList.remove('on');
+                // Toast 反馈
+                api.toast({
+                    msg: '⛔ 已停止短信监听',
+                    duration: 2000,
+                    location: 'middle'
+                });
             }
             // 保存设置
             api.setPrefs({
@@ -489,16 +1045,21 @@
     // 检查短信读取权限
     function checkSMSPermission() {
         var permissions = ['sms']; // 短信读取权限，查询官网确定
-        
+
         try {
             api.requestPermission({
                 list: permissions,
                 code: 100001
             }, function(ret, err) {
-                
+
                 if (err) {
                     addLog('权限请求出错: ' + JSON.stringify(err), 'error');
                     showError('权限请求出错: ' + err.msg);
+                    api.toast({
+                        msg: '❌ 权限请求出错',
+                        duration: 2000,
+                        location: 'middle'
+                    });
                     return;
                 }
                 
@@ -510,6 +1071,11 @@
                         
                         if (granted.length > 0) {
                             addLog('短信读取权限已授权', 'success');
+                            api.toast({
+                                msg: '✅ 短信读取权限已授权',
+                                duration: 2000,
+                                location: 'middle'
+                            });
                         } else {
                             addLog('短信读取权限被拒绝', 'error');
                             showError('需要短信读取权限才能使用此功能');
@@ -559,22 +1125,45 @@
             return;
         }
 
+        // 复用内部注册方法：先注销旧的，再注册新的
+        if (doRegisterSMSListener('启动')) {
+            isListening = true;
+            startAlive(); // 同时开启线程常驻
+        }
+    }
+
+    // 内部方法：执行实际的注册（先注销旧的，再注册新的）
+    // 用于在"启动监听"和"resume / appactive 事件"中复用。
+    // 当 MIUI 深度休眠冻结进程后再次唤醒时，原 BroadcastReceiver 可能已失效，
+    // 必须重新注册才能接收休眠期间系统缓存的短信广播。
+    var _lastRegisterTime = 0;  // 节流：避免短时间内反复注册
+    function doRegisterSMSListener(reason) {
+        if (!smsListenerModule) {
+            return false;
+        }
+
+        // 节流：距上次注册不足 1 秒则跳过（避免频繁切换 APP 时反复注销/注册）
+        var now = Date.now();
+        if (reason === 'resume' && (now - _lastRegisterTime) < 1000) {
+            console.log('【SMS监听】resume 距上次注册 < 1s，跳过本次注册');
+            return false;
+        }
+        _lastRegisterTime = now;
+
         try {
-             // 先注销，确保不会重复注册
+            // 先注销旧的（如果存在），确保不会重复注册
             smsListenerModule.unRegisterSmsListener();
 
-            // 使用正确的API注册短信监听
+            // 注册新的短信监听
             smsListenerModule.registerSmsListener(function(ret) {
-                // addLog('收到短信: ' + JSON.stringify(ret), 'success');
                 processSMS(ret);
             });
-            
-            isListening = true;
-            addLog('短信监听已启动', 'success');
-            startAlive(); // 同时开启线程常驻
+
+            addLog('短信监听已注册（' + (reason || '手动') + '）', 'success');
+            return true;
         } catch (e) {
-            addLog('启动短信监听失败: ' + e.message, 'error');
-            showError('启动短信监听失败');
+            addLog('注册短信监听失败: ' + e.message, 'error');
+            return false;
         }
     }
 
@@ -585,10 +1174,13 @@
                 // 使用正确的API注销短信监听
                 smsListenerModule.unRegisterSmsListener();
             }
-            
+
+            // 同时停止进程保活（B4 修复）
+            stopAlive();
+
             isListening = false;
             addLog('短信监听已停止', 'success');
-            
+
         } catch (e) {
             addLog('停止短信监听失败: ' + e.message, 'error');
         }
@@ -601,64 +1193,95 @@
     var SMS_DUPLICATE_WINDOW = 5000; // 去重时间窗口（毫秒）
 
     // 对监听到的短信进行处理，满足条件后触发提醒
+    // 注意：去重 + 并发检测逻辑使用 while 循环 + 最大重试次数，
+    // 避免并发更新时无限递归导致栈溢出（B3 修复）
+    var MAX_DEDUPE_RETRY = 3;
+
     function processSMS(sms) {
         if (!sms || !sms.tel) {
             return;
         }
-        
-        // 读取最新的去重记录（解决多实例同步问题）
-        var storedRecentSMS = localStorage.getItem('recentSMS');
-        var storedAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
-        var currentRecentSMS = storedRecentSMS ? JSON.parse(storedRecentSMS) : { timestamp: 0, tel: '', content: '' };
 
-        // 刷新警报记录确保使用最新数据
-        loadAlertRecords();
-
-        // 检查是否为重复短信   
-        // 去重逻辑：检查是否在短时间内收到相同内容的短信
-        var now = Date.now();
-        // 按天去重逻辑：同一天内相同手机号和内容视为重复
-        var currentDate = new Date().toISOString().split('T')[0];
-        var recentDate = new Date(currentRecentSMS.timestamp).toISOString().split('T')[0];
-        var isDuplicate = (currentDate === recentDate && 
-                          currentRecentSMS.tel === sms.tel && 
-                          currentRecentSMS.content === sms.content);
-        
-        // 同时检查历史警报记录防止多实例重复
-        if (!isDuplicate) {
-            var storedAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
-            var latestAlertRecords = storedAlertRecords ? JSON.parse(storedAlertRecords) : [];
-            var recentAlert = latestAlertRecords.find(function(record) {
-                var recordTimestamp = new Date(record.timestamp).getTime();
-                var recordDate = new Date(recordTimestamp).toISOString().split('T')[0];
-                var currentDate = new Date().toISOString().split('T')[0];
-                return (currentDate === recordDate &&
-                    record.phoneNumber === sms.tel &&
-                    record.content === sms.content);
-            });
-            isDuplicate = !!recentAlert;
-        }
-        
-        if (isDuplicate) {
-            addLog('检测到重复短信，已忽略处理', 'warning');
+        // 测试短信（如手动测试触发）：直接走警报流程，绕过去重
+        // 真实短信（来自 smsListener）isTest 为 undefined，正常进入去重逻辑
+        var isTestSms = sms.isTest === true;
+        if (isTestSms) {
+            addLog('【测试短信】跳过去重检测', 'info');
+            doTriggerAlert(sms);
             return;
         }
-        
-        // 并发更新检测：验证期间是否有其他实例修改了数据
-        var latestStoredRecentSMS = localStorage.getItem('recentSMS');
-        var latestStoredAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
-        if (latestStoredRecentSMS !== storedRecentSMS || latestStoredAlertRecords !== storedAlertRecords) {
-            addLog('检测到并发更新，重新检查重复', 'info');
-            return processSMS(sms); // 重试检测流程
+
+        var retry = 0;
+        var storedRecentSMS, storedAlertRecords;
+        var isDuplicate, now;
+
+        // 去重 + 并发重试循环（最多 MAX_DEDUPE_RETRY 次）
+        while (true) {
+            // 读取最新的去重记录（解决多实例同步问题）
+            storedRecentSMS = localStorage.getItem('recentSMS');
+            storedAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+            var currentRecentSMS = storedRecentSMS ? JSON.parse(storedRecentSMS) : { timestamp: 0, tel: '', content: '' };
+
+            // 刷新警报记录确保使用最新数据
+            loadAlertRecords();
+
+            // 检查是否为重复短信
+            // 按天去重逻辑：同一天内相同手机号和内容视为重复
+            var currentDate = new Date().toISOString().split('T')[0];
+            var recentDate = new Date(currentRecentSMS.timestamp).toISOString().split('T')[0];
+            isDuplicate = (currentDate === recentDate &&
+                          currentRecentSMS.tel === sms.tel &&
+                          currentRecentSMS.content === sms.content);
+
+            // 同时检查历史警报记录防止多实例重复
+            if (!isDuplicate) {
+                var latestAlertRecords = storedAlertRecords ? JSON.parse(storedAlertRecords) : [];
+                var recentAlert = latestAlertRecords.find(function(record) {
+                    var recordDate = new Date(new Date(record.timestamp).getTime()).toISOString().split('T')[0];
+                    return (currentDate === recordDate &&
+                        record.phoneNumber === sms.tel &&
+                        record.content === sms.content);
+                });
+                isDuplicate = !!recentAlert;
+            }
+
+            if (isDuplicate) {
+                addLog('检测到重复短信，已忽略处理', 'warning');
+                return;
+            }
+
+            // 并发更新检测：验证期间是否有其他实例修改了数据
+            var latestStoredRecentSMS = localStorage.getItem('recentSMS');
+            var latestStoredAlertRecords = api.getPrefs({sync: true, key: 'alertRecords_' + currentYear});
+            if (latestStoredRecentSMS === storedRecentSMS && latestStoredAlertRecords === storedAlertRecords) {
+                // 无并发更新，退出重试循环
+                break;
+            }
+
+            // 有并发更新，重试（限制最大次数）
+            retry++;
+            if (retry > MAX_DEDUPE_RETRY) {
+                addLog('并发检测超过最大重试次数（' + MAX_DEDUPE_RETRY + '），放弃本次处理', 'error');
+                return;
+            }
+            addLog('检测到并发更新，重新检查重复（' + retry + '/' + MAX_DEDUPE_RETRY + '）', 'info');
         }
-        
-        // 确定非重复后立即同步到localStorage（防止竞态条件）
+
+        // 通过去重 + 并发检测，记录当前短信到 localStorage
+        now = Date.now();
         var newRecentSMS = { timestamp: now, tel: sms.tel, content: sms.content };
         localStorage.setItem('recentSMS', JSON.stringify(newRecentSMS));
         recentSMS = newRecentSMS;
-        
+
+        // 共用触发流程
+        doTriggerAlert(sms);
+    }
+
+    // 触发警报（号码匹配 + 关键词匹配 + 通知/记录/播放）
+    // 真实短信与测试短信共用，确保行为一致
+    function doTriggerAlert(sms) {
         addLog('收到短信来自: ' + sms.tel + ', 内容: ' + (sms.content ? sms.content.substr(0, 30) + '...' : '无内容'));
-        
+
         // 如果启用了号码匹配，先检查号码
         if (enableNumberMatch) {
             if (sms.tel.indexOf(targetNumber) === -1) {
@@ -669,13 +1292,13 @@
         } else {
             addLog('号码匹配已禁用，跳过号码检查', 'success');
         }
-        
+
         // 检查短信内容是否匹配关键词
         if (checkContentMatch(sms.content)) {
             addLog('短信内容匹配关键词，触发提醒', 'success');
             // 推送通知到通知栏
             showNotification('【紧急】交警短信', sms.content);
-            
+
             // 记录警报事件
             recordAlert(sms);
 
@@ -834,6 +1457,11 @@
         var logArea = document.getElementById('logArea');
         logArea.innerHTML = '';
         addLog('日志已清空', 'success');
+        api.toast({
+            msg: '🗑 日志已清空',
+            duration: 1500,
+            location: 'middle'
+        });
     }
 
     // 添加日志：成功、失败、警告
@@ -841,32 +1469,27 @@
         var logArea = document.getElementById('logArea');
         var time = new Date().toLocaleTimeString();
         var logItem = document.createElement('div');
-        logItem.className = 'log-item';
-        
+        // 用 type 作为 class（CSS .log-item.success/.error/.warning/.info 左侧色条）
+        logItem.className = 'log-item ' + (type || 'info');
+
         var timeSpan = document.createElement('div');
         timeSpan.className = 'log-time';
         timeSpan.textContent = time;
-        
+
         var contentSpan = document.createElement('div');
         contentSpan.className = 'log-content';
         contentSpan.textContent = text;
-        
-        if (type === 'error') {
-            contentSpan.style.color = '#ff4444';
-        } else if (type === 'success') {
-            contentSpan.style.color = '#44aa44';
-        }
-        
+
         logItem.appendChild(timeSpan);
         logItem.appendChild(contentSpan);
-        
+
         // 在顶部插入新的日志
         if (logArea.firstChild) {
             logArea.insertBefore(logItem, logArea.firstChild);
         } else {
             logArea.appendChild(logItem);
         }
-        
+
         // 限制日志数量，最多显示50条
         while (logArea.children.length > 50) {
             logArea.removeChild(logArea.lastChild);
@@ -878,13 +1501,15 @@
     // 手动测试提醒功能-触发短信后续逻辑
     function manualTestAlert() {
         addLog('手动测试提醒功能', 'success');
-        
+
         // 模拟收到目标号码的短信
+        // isTest: true 让 processSMS 跳过去重逻辑（不影响真实短信的防重复）
         var mockSMS = {
             tel: targetNumber,
-            content: keywords.join('、') + '\n提醒：您的车辆在XX路段有违章记录，请及时处理。'
+            content: keywords.join('、') + '\n提醒：您的车辆在XX路段有违章记录，请及时处理。',
+            isTest: true
         };
-        
+
         addLog('模拟收到短信: ' + JSON.stringify(mockSMS), 'success');
         processSMS(mockSMS);
         
@@ -993,48 +1618,59 @@
 
     // 初始化音量控制
     function initVolumeControl() {
+        var slider = document.getElementById('alertVolume');
+        var valueLabel = document.getElementById('alertVolumeValue');
+
+        // 工具：更新滑轨的 CSS 变量（让 track 进度颜色跟随值变化）
+        function updateSliderFill(percent) {
+            slider.style.setProperty('--volume-percent', percent + '%');
+        }
+
         // 加载保存的警报音量设置
         var savedAlertVolume = api.getPrefs({sync: true, key: 'alertVolume'});
         if(savedAlertVolume) {
             var volumePercent = parseFloat(savedAlertVolume) * 100;
-            document.getElementById('alertVolume').value = volumePercent;
-            document.getElementById('alertVolumeValue').textContent = volumePercent.toFixed(0) + '%';
+            slider.value = volumePercent;
+            valueLabel.textContent = volumePercent.toFixed(0) + '%';
         }
-        
+        // 初始化滑轨颜色
+        updateSliderFill(slider.value);
+
         // 节流函数，减少频繁更新
         var updateTimeout = null;
         var lastUpdateTime = 0;
-        
+
         // 监听音量滑块变化 - 使用节流减少更新频率
-        document.getElementById('alertVolume').addEventListener('input', function(e) {
+        slider.addEventListener('input', function(e) {
             var volumePercent = e.target.value;
             var currentTime = Date.now();
-            
-            // 立即更新显示，但限制更新频率
-            if (currentTime - lastUpdateTime > 50) { // 50ms节流
-                document.getElementById('alertVolumeValue').textContent = volumePercent + '%';
+
+            // 实时更新滑轨颜色 + 显示值（节流 50ms）
+            if (currentTime - lastUpdateTime > 50) {
+                updateSliderFill(volumePercent);
+                valueLabel.textContent = volumePercent + '%';
                 lastUpdateTime = currentTime;
             }
-            
+
             // 清除之前的定时器
             if (updateTimeout) {
                 clearTimeout(updateTimeout);
             }
-            
+
             // 延迟保存设置，避免频繁写入
             updateTimeout = setTimeout(function() {
                 api.setPrefs({
                     key: 'alertVolume',
                     value: (volumePercent / 100).toString()
                 });
-            }, 200); // 200ms后保存
+            }, 200);
         });
-        
+
         // 监听音量滑块拖动结束 - 只在拖动结束后打印日志
-        document.getElementById('alertVolume').addEventListener('change', function(e) {
+        slider.addEventListener('change', function(e) {
             var volumePercent = e.target.value;
-            // 确保最终值正确显示
-            document.getElementById('alertVolumeValue').textContent = volumePercent + '%';
+            updateSliderFill(volumePercent);
+            valueLabel.textContent = volumePercent + '%';
             addLog('警报音量已设置为: ' + volumePercent + '%', 'success');
         });
     }
@@ -1044,20 +1680,31 @@
         if (!acc5Util) {
             document.getElementById('currentVolume').textContent = '模块未初始化';
             addLog('acc5Util模块未初始化，无法获取系统音量', 'warning');
+            api.toast({
+                msg: '⚠️ 音量模块未初始化',
+                duration: 1500,
+                location: 'middle'
+            });
             return;
         }
-        
+
         // 先获取当前音量：system：系统音量，music：媒体音量，ring：铃声音量，call：通话音量，alarm：闹钟音量，notice
         acc5Util.getVol({}, function(ret, err) {
             if (ret && ret.data) {
                 console.log('----------------当前系统音量：' + JSON.stringify(ret));
                 var currentVolume = ret.data.music;
-                document.getElementById('currentVolume').textContent = (currentVolume * 100).toFixed(0) + '%';
-                addLog('当前系统音量: ' + (currentVolume * 100).toFixed(0) + '%', 'success');
+                var volumeDisplay = (currentVolume * 100).toFixed(0) + '%';
+                document.getElementById('currentVolume').textContent = volumeDisplay;
+                addLog('当前系统音量: ' + volumeDisplay, 'success');
+                api.toast({
+                    msg: '🔊 当前系统音量: ' + volumeDisplay,
+                    duration: 1500,
+                    location: 'middle'
+                });
             } else {
                 document.getElementById('currentVolume').textContent = '获取失败';
                 addLog('获取系统音量失败: ' + JSON.stringify(err), 'error');
-                
+
                 // 如果获取失败，可能是模块还未完全初始化，延迟重试
                 setTimeout(function() {
                     if (acc5Util) {
@@ -1125,33 +1772,40 @@
 
     // 开启线程常驻
     function startAlive() {
-        console.log('----------------：开启线程常驻');
-        var params = {
-        };
-        console.log('----------------线程常驻对象1：' + moduleProcessAlive);
-        moduleProcessAlive = api.require('moduleProcessAlive_2024');
+        // 不再重复 require，initSMSListenerModule 已经 require 过 moduleProcessAlive_2024
+        if (!moduleProcessAlive) {
+            moduleProcessAlive = api.require('moduleProcessAlive_2024');
+        }
+        var params = {};
         moduleProcessAlive.startAlive(params, function (ret, err) {
-            console.log('----------------线程常驻返回：' + JSON.stringify(ret));
             if (ret) {
-                var data = ret.data;
                 addLog('线程常驻已启动', 'success');
             } else {
                 addLog('线程常驻启动失败: ' + JSON.stringify(err), 'error');
             }
         });
     }
-    // 停止线程常驻-未成功
+
+    // 停止线程常驻
+    // 注意：原注释"-未成功"，模块文档未公开 stopAlive 接口，先尝试调用并容错处理。
+    // 即便 stopAlive 调用失败，主流程的短信监听也已停止，不影响主体功能（B4 修复）。
     function stopAlive() {
-        var params = {
-        };
-        moduleProcessAlive.stopAlive(params, function (ret, err) {
-            if (ret) {
-                var data = ret.data;
-                addLog('线程常驻已停止', 'success');
-            } else {
-                addLog('线程常驻停止失败: ' + JSON.stringify(err), 'error');
-            }
-        });
+        if (!moduleProcessAlive) {
+            return;
+        }
+        try {
+            var params = {};
+            moduleProcessAlive.stopAlive(params, function (ret, err) {
+                if (ret) {
+                    addLog('线程常驻已停止', 'success');
+                } else {
+                    addLog('线程常驻停止失败（模块可能不支持 stopAlive 接口）: ' + JSON.stringify(err), 'warning');
+                }
+            });
+        } catch (e) {
+            // 静默处理：模块不支持 stopAlive 时不应阻塞主流程
+            console.log('stopAlive 调用异常（可忽略）: ' + e.message);
+        }
     }
     // 显示通知
     function showNotification(title, content){
@@ -1203,29 +1857,35 @@
     }
 
     // 试听音效
+    var TEST_BTN_DEFAULT_TEXT = '🔊 试听音效';  // 按钮初始文字（停止/完成后还原为此）
     function testSound() {
         var testBtn = document.getElementById('testSoundBtn');
-        
+
         if (isTestPlaying) {
             // 如果正在试听，则停止试听
             try {
                 api.stopPlay();
                 isTestPlaying = false;
-                testBtn.textContent = '试听';
+                testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
                 addLog('音效试听已停止', 'success');
-                
+                api.toast({
+                    msg: '⏹ 试听已停止',
+                    duration: 1500,
+                    location: 'middle'
+                });
+
                 // 停止试听时也要恢复原始音量
                 restoreOriginalVolume();
             } catch (e) {
                 addLog('停止试听失败: ' + e.message, 'error');
                 // 即使停止失败，也要重置状态和恢复音量
                 isTestPlaying = false;
-                testBtn.textContent = '试听';
+                testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
                 restoreOriginalVolume();
             }
             return;
         }
-        
+
         if (isPlaying) {
             api.toast({
                 msg: '请先停止当前播放的警报铃声',
@@ -1234,32 +1894,47 @@
             });
             return;
         }
-        
+
         try {
             var audioPath = 'widget://res/' + selectedSound;
             addLog('开始试听音效: ' + selectedSound, 'success');
-            
+            api.toast({
+                msg: '🔊 正在试听：' + selectedSound,
+                duration: 1500,
+                location: 'middle'
+            });
+
             isTestPlaying = true;
-            testBtn.textContent = '停止';
-            
+            testBtn.textContent = '⏹ 停止';
+
             // 获取设置的警报音量
             var alertVolumePercent = document.getElementById('alertVolume').value;
             var alertVolume = alertVolumePercent / 100;
             // 保存当前音量并设置警报音量
             saveAndSetVolume(alertVolume);
-            
+
             api.startPlay({
                 path: audioPath,
             }, function(ret, err) {
                 if (ret) {
                     addLog('音效试听完成', 'success');
+                    api.toast({
+                        msg: '✅ 音效试听完成',
+                        duration: 1500,
+                        location: 'middle'
+                    });
                 } else {
                     addLog('音效试听失败: ' + JSON.stringify(err), 'error');
+                    api.toast({
+                        msg: '❌ 音效试听失败',
+                        duration: 2000,
+                        location: 'middle'
+                    });
                 }
-                
+
                 // 试听完成后恢复按钮状态
                 isTestPlaying = false;
-                testBtn.textContent = '试听';
+                testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
 
                 // 试听完成后恢复原始音量
                 restoreOriginalVolume();
@@ -1267,8 +1942,8 @@
         } catch (e) {
             addLog('音效试听异常: ' + e.message, 'error');
             isTestPlaying = false;
-            testBtn.textContent = '试听';
-            
+            testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
+
             // 异常情况下也要恢复原始音量
             restoreOriginalVolume();
         }
@@ -1322,17 +1997,20 @@
         }
 
         // 准备新记录
+        // 注意（B8 修复）：year/month/day/weekday 直接从 timestamp 推导，
+        // 避免 currentYear（脚本加载时计算）跨年错位。
+        var now = new Date();
         let record = {
             id: Date.now(),
-            timestamp: new Date().toISOString(),
-            date: new Date().toISOString().split('T')[0],
-            time: new Date().toLocaleTimeString(),
+            timestamp: now.toISOString(),
+            date: currentDate,
+            time: now.toLocaleTimeString(),
             phoneNumber: sms.tel,
             content: sms.content,
-            year: new Date().getFullYear(),
-            month: new Date().getMonth() + 1,
-            day: new Date().getDate(),
-            weekday: new Date().getDay()
+            year: now.getFullYear(),
+            month: now.getMonth() + 1,
+            day: now.getDate(),
+            weekday: now.getDay()
         };
 
 
@@ -1347,17 +2025,21 @@
         }
         // 使用已准备的记录对象
         alertRecords.push(record);
-        
-        // 确保记录只被添加一次
-        saveAlertRecords();
+
+        // 保存到对应年份的 prefs key，避免跨年保存时
+        // currentYear 与 record.year 不一致导致数据丢失
+        saveAlertRecords(record.year);
         addLog('已记录警报事件: ' + record.date + ' ' + record.time, 'success');
     }
-    
+
     // 保存警报记录到本地存储
-    function saveAlertRecords() {
+    // year 参数用于跨年场景：脚本加载时计算的 currentYear 可能与
+    // 最新一条记录的 year 不一致，用 record.year 作为 key 更准确（B8 修复）。
+    function saveAlertRecords(year) {
+        var useYear = (year !== undefined && year !== null) ? year : currentYear;
         try {
             api.setPrefs({
-                key: 'alertRecords_' + currentYear,
+                key: 'alertRecords_' + useYear,
                 value: JSON.stringify(alertRecords)
             });
         } catch (e) {
