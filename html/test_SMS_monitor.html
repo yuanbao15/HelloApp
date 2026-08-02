@@ -1499,6 +1499,99 @@
         console.log(time + ': ' + text);
     }
 
+    // 清空日志区（由"清除缓存 → 清除一般缓存"调用）
+    function clearLogs() {
+        var logArea = document.getElementById('logArea');
+        if (logArea) {
+            logArea.innerHTML = '';
+            addLog('日志已清空', 'info');
+            return true;
+        }
+        return false;
+    }
+
+    // 重置用户设置到默认值（由"清除缓存 → 清除一般缓存"调用）
+    // 重置项：监听开关、目标号码、号码匹配、关键词、匹配逻辑、音量、音效
+    // 不动：alertRecords_YYYY（消息记录）、recentSMS（短信去重）
+    function resetUserConfig() {
+        try {
+            // 默认值（与文件顶部变量初始值保持一致）
+            var defaultTargetNumber = '12123';
+            var defaultKeywords = ['湖北交警', '鄂AY366Q'];
+            var defaultMatchLogic = 'or';
+            var defaultSound = 'short_ring.mp3';
+            var defaultEnableNumberMatch = false;
+            var defaultVolumePercent = 50; // 与 HTML input value="50" 一致
+
+            // 1) 如果在监听，先停止
+            if (isListening) {
+                try {
+                    stopSMSListener();
+                } catch (e) {}
+                isListening = false;
+            }
+
+            // 2) 重置内存变量
+            targetNumber = defaultTargetNumber;
+            keywords = defaultKeywords.slice();
+            matchLogic = defaultMatchLogic;
+            selectedSound = defaultSound;
+            enableNumberMatch = defaultEnableNumberMatch;
+
+            // 3) 重置 UI
+            var smsSwitch = document.getElementById('smsSwitch');
+            if (smsSwitch) smsSwitch.checked = false;
+            var masterBox = document.getElementById('masterSwitchBox');
+            if (masterBox) masterBox.classList.remove('on');
+            var statusText = document.getElementById('statusText');
+            if (statusText) statusText.textContent = '当前状态: 已停止监听';
+            var targetInput = document.getElementById('targetNumber');
+            if (targetInput) targetInput.value = defaultTargetNumber;
+            var numberMatchEl = document.getElementById('enableNumberMatch');
+            if (numberMatchEl) numberMatchEl.checked = false;
+            if (typeof updateNumberDisplay === 'function') {
+                updateNumberDisplay(false);
+            }
+            // 匹配逻辑 radio
+            var logicRadio = document.getElementById('logic' + defaultMatchLogic.charAt(0).toUpperCase() + defaultMatchLogic.slice(1));
+            if (logicRadio) logicRadio.checked = true;
+            // 关键词列表
+            if (typeof updateKeywordUI === 'function') {
+                updateKeywordUI();
+            }
+            // 音量滑块
+            var volumeSlider = document.getElementById('alertVolume');
+            var volumeLabel = document.getElementById('alertVolumeValue');
+            if (volumeSlider) {
+                volumeSlider.value = defaultVolumePercent;
+                if (volumeLabel) volumeLabel.textContent = defaultVolumePercent + '%';
+                // 同步 CSS 变量（让 track 进度颜色跟随）
+                volumeSlider.style.setProperty('--volume-percent', defaultVolumePercent + '%');
+            }
+            // 音效 radio
+            var soundShort = document.getElementById('soundShort');
+            var soundPolice = document.getElementById('soundPolice');
+            if (defaultSound === 'short_ring.mp3') {
+                if (soundShort) soundShort.checked = true;
+                if (soundPolice) soundPolice.checked = false;
+            } else {
+                if (soundShort) soundShort.checked = false;
+                if (soundPolice) soundPolice.checked = true;
+            }
+
+            // 4) 禁用相关区域（开关关闭后）
+            if (typeof disableSections === 'function') {
+                disableSections();
+            }
+
+            addLog('用户设置已重置为默认值', 'info');
+            return true;
+        } catch (e) {
+            addLog('重置用户设置失败: ' + e.message, 'error');
+            return false;
+        }
+    }
+
     // 手动测试提醒功能-触发短信后续逻辑
     function manualTestAlert() {
         addLog('手动测试提醒功能', 'success');
@@ -2103,6 +2196,20 @@
             alertRecords = [];
             addLog('加载警报记录失败: ' + e.message, 'error');
         }
+    }
+
+    // 由"清除消息记录"/"导入数据"等更多页操作触发，强制从 prefs/fs:// 重新加载
+    // alertRecords_YYYY，使首页和统计页能即时看到最新数据
+    function reloadAlertRecords() {
+        // 清空当前内存中的去重缓存，避免旧 timestamp 把刚导入的新记录误判为重复
+        recentSMS = { timestamp: 0, tel: '', content: '' };
+        try { localStorage.setItem('recentSMS', JSON.stringify(recentSMS)); } catch (e) {}
+        loadAlertRecords();
+        // 刷新首页 UI（如果首页有根据 alertRecords 渲染的列表）
+        if (typeof renderAlertList === 'function') {
+            renderAlertList();
+        }
+        addLog('警报记录已刷新（共 ' + alertRecords.length + ' 条）', 'info');
     }
     
     // 显示统计页面

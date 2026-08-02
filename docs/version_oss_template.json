@@ -1,0 +1,10 @@
+{
+  "version": "1.2.0",
+  "versionCode": 120,
+  "downloadUrl": "https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/file/public/develop_resources/YB/HellloApp/yb_files/HelloApp-1.2.0.apk",
+  "apkSize": "12.5MB",
+  "forceUpdate": false,
+  "minVersion": "1.0.0",
+  "updateDate": "2026-08-02",
+  "changelog": "新增导出数据功能（支持 JSON / CSV 格式）\n修复清除缓存不彻底的问题\n优化统计页图表加载速度\n\"关于应用\"页接入 OSS 远程内容展示\n\"检查更新\"功能实装，支持在线下载 APK 升级"
+}

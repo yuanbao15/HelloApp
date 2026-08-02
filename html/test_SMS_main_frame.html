@@ -141,12 +141,44 @@
 
     <!-- 用绝对路径，解决config设置index再跳转过来和直接访问时路径错误 -->
     <script src="/script/api.js"></script>
+    <!-- marked.js（v9.1.6，36KB，0 依赖）：用于把 OSS 上的 about.md 解析成 HTML。
+         同时放在 widget 根 script/ 和 html/ 同级 script/，相对路径优先，兼容各种 webview 加载方式 -->
+    <script src="./script/marked.min.js"></script>
     <script>
         var currentPage = 'home'; // 当前页面
         var prevPage = 'home'; // 新增：记录上一个页面
         var pageFrames = {};
         var isHandlingBackKey = false; // 防止返回键重复处理
-        
+
+        // ========== OSS 远程配置（双文件方案） ==========
+        // 路径说明：OSS 桶里的目录名就是 HellloApp（双 L），与桶内实际一致；
+        // 若以后想改成单 L 的 HelloApp，需要同步修改这里 + version.json。
+        var OSS_BASE_URL = 'https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/file/public/develop_resources/YB/HellloApp/yb_files/';
+        var ABOUT_MD_URL = OSS_BASE_URL + 'about.md';       // 开发者通知（纯 markdown）
+        var VERSION_JSON_URL = OSS_BASE_URL + 'version.json'; // 版本信息（JSON）
+        var CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
+
+        // marked.js 配置：GFM 风格（GitHub Flavored Markdown），更符合用户书写习惯
+        // 当前使用 marked v0.8.2（纯 ES5，兼容 IE9+/Android 5+ 老 webview）
+        // 重要：不能用 v9+ 或 v12+，因为它们用了 globalThis / ?? / ?. / class 等 ES6+ 特性
+        if (window.marked && window.marked.setOptions) {
+            window.marked.setOptions({
+                gfm: true,
+                breaks: false
+            });
+            console.log('[about] marked.js 加载成功 (parse API 可用:', typeof window.marked.parse + ')');
+        } else {
+            console.warn('[about] marked.js 未加载，将使用简单 fallback 解析器');
+        }
+
+        // about.md 缓存
+        var cachedAboutHtml = null;
+        var aboutCacheTimestamp = 0;
+
+        // version.json 缓存
+        var cachedVersionInfo = null;
+        var versionCacheTimestamp = 0;
+
         apiready = function() {
             // 配置状态栏显示
             api.setStatusBarStyle({
@@ -201,7 +233,16 @@
                     console.log('prevPage: ', prevPage);
                     console.log('更多页-触发了返回');
 
-                    // 先尝试关闭可能存在的捐赠页面
+                    // 先尝试关闭可能存在的关于页面
+                    if (pageFrames.about) {
+                        api.execScript({
+                            frameName: 'aboutFrame',
+                            script: 'closePage();'
+                        });
+                        pageFrames.about = null;
+                    }
+
+                    // 再尝试关闭可能存在的捐赠页面
                     if (pageFrames.donate) {
                         api.execScript({
                             frameName: 'donateFrame', // 统计页frame的name
@@ -245,6 +286,13 @@
                     currentPage = 'home';
                     pageFrames.statistics = null;
                     switchPage('home');
+                } else if (ret && ret.name === 'aboutFrame') {
+                    console.log('关于页面frame已关闭');
+                    pageFrames.about = null;
+                    if (currentPage === 'more') {
+                        currentPage = prevPage;
+                        updateNavigationState(currentPage);
+                    }
                 } else if (ret && ret.name === 'donateFrame') {
                     console.log('捐赠页面frame已关闭');
                     pageFrames.donate = null;
@@ -255,7 +303,52 @@
                     }
                 }
             });
-            
+
+            // 监听关于页面的"检查更新"请求
+            api.addEventListener({
+                name: 'triggerCheckUpdate'
+            }, function(ret, err) {
+                console.log('收到检查更新请求');
+                checkForUpdates();
+            });
+
+            // 监听关于页面的"刷新内容"请求（关于页右上角的刷新按钮）
+            // 流程：about frame 发信号 → 主框架强制重拉 OSS → 拉成功后通过全局回调
+            //      pushAboutContent(html, md) 把内容塞给 about frame 重渲染
+            //      （避免 execScript 注入长 HTML 字符串触发 SyntaxError）
+            api.addEventListener({
+                name: 'triggerRefreshAbout'
+            }, function(ret, err) {
+                console.log('收到刷新 about 内容请求');
+                api.showProgress({ title: '正在刷新…', modal: true });
+                // 强制刷新：跳过内存缓存，重新拉 OSS
+                fetchAboutContent(function(html, err) {
+                    api.hideProgress();
+                    if (html) {
+                        // 把新内容临时存到全局变量，让 about frame 自己读
+                        // （跨 frame 的 window 不共享，但全局缓存变量在主框架 window 上，
+                        //  通过 sendEvent + about frame 读主框架的 window 变量是不行的——
+                        //  改用：把内容临时存到 prefs 的临时 key，about frame 监听
+                        //  aboutContentRefreshed 信号后从临时 prefs key 读取）
+                        api.setPrefs({
+                            key: '_aboutRefreshBuffer',
+                            value: html
+                        });
+                        if (lastAboutMarkdown) {
+                            api.setPrefs({
+                                key: '_aboutRefreshBufferMd',
+                                value: lastAboutMarkdown
+                            });
+                        }
+                        api.sendEvent({
+                            name: 'aboutContentRefreshed'
+                        });
+                        api.toast({ msg: '已刷新最新内容', duration: 1500, location: 'bottom' });
+                    } else {
+                        api.toast({ msg: '刷新失败，请检查网络', duration: 2000, location: 'middle' });
+                    }
+                }, true);
+            });
 
         };
         
@@ -399,7 +492,7 @@
                 title: '更多选项',
                 cancelTitle: '取消',
                 destructiveTitle: '',
-                buttons: ['关于应用', '检查更新', '清除缓存', '导出数据', '打赏捐赠']
+                buttons: ['关于应用', '检查更新', '清除缓存', '导出数据', '导入数据', '打赏捐赠']
             }, function(ret, err) {
                 console.log('actionSheet按钮索引', ret.buttonIndex);
                 if (ret && ret.buttonIndex !== 0) { // 0是取消
@@ -411,12 +504,15 @@
                             checkForUpdates();
                             break;
                         case 3:
-                            clearAppCache();
+                            showClearCacheMenu();
                             break;
                         case 4:
                             exportAllData();
                             break;
                         case 5:
+                            importAllData();
+                            break;
+                        case 6:
                             api.openFrame({
                                 name: 'donateFrame',
                                 url: './test_SMS_donate.html',
@@ -478,54 +574,1225 @@
             console.log('导航状态更新完成');
         }
         
-        // 关于应用
+        // 关于应用 - 从 OSS 拉取 about.md 并展示
         function showAboutApp() {
-            api.alert({
-                title: '关于应用',
-                msg: '交警短信增强提醒 v1.0\n\n功能：\n• 自动监听交警短信\n• 增强警报提醒\n• 数据统计分析\n\n开发者：Yuanbao15\n版本：1.0.0'
-            });
-        }
-        
-        // 检查更新
-        function checkForUpdates() {
-            api.toast({
-                msg: '当前已是最新版本',
-                duration: 2000,
-                location: 'bottom'
-            });
-        }
-        
-        // 清除缓存
-        function clearAppCache() {
-            api.confirm({
-                title: '清除缓存',
-                msg: '确定要清除所有缓存数据吗？',
-                buttons: ['取消', '确定']
-            }, function(ret) {
-                if (ret.buttonIndex === 2) {
-                    // 清除缓存逻辑
-                    var currentYear = new Date().getFullYear();
-                    api.setPrefs({
-                        key: 'alertRecords_' + currentYear,
-                        value: ''
-                    });
-                    api.toast({
-                        msg: '缓存清除成功',
-                        duration: 2000,
-                        location: 'bottom'
+            // api.appVersion 来自 config.xml，真实反映当前安装版本
+            var currentVersion = api.appVersion || '1.0.0';
+            // 1) 内存缓存命中直接用（避免每次都拉网络）
+            if (cachedAboutHtml && (Date.now() - aboutCacheTimestamp < CACHE_TTL)) {
+                openAboutFrame('about', currentVersion, cachedAboutHtml);
+                return;
+            }
+            // 2) 走网络（fetchAboutContent 内部已带"网络失败 → 本地缓存兜底"逻辑）
+            api.showProgress({ title: '加载中…', modal: true });
+            fetchAboutContent(function(html, err) {
+                api.hideProgress();
+                if (html) {
+                    openAboutFrame('about', currentVersion, html);
+                } else {
+                    // 3) 双保险：网络失败且本地缓存也没了 → 弹出友好提示
+                    api.alert({
+                        title: '提示',
+                        msg: '无法获取"关于应用"内容，请检查网络后重试',
+                        buttons: ['确定']
                     });
                 }
             });
         }
-        
-        // 导出所有数据
-        function exportAllData() {
-            api.toast({
-                msg: '导出功能开发中...',
-                duration: 2000,
-                location: 'bottom'
+
+        // 检查更新 - 从 OSS 拉取 version.json 并比对
+        function checkForUpdates() {
+            api.showProgress({ title: '检查更新中…', modal: true });
+            // 强制刷新缓存
+            versionCacheTimestamp = 0;
+            fetchVersionInfo(function(info, err) {
+                api.hideProgress();
+                if (!info) {
+                    api.toast({ msg: '检查更新失败，请检查网络', duration: 2000, location: 'bottom' });
+                    return;
+                }
+                var currentVersion = api.appVersion || '1.0.0';
+                var latestVersion = info.version || currentVersion;
+                if (compareVersions(latestVersion, currentVersion) > 0) {
+                    // 有新版本，打开更新对话框
+                    openAboutFrame('update', currentVersion, info);
+                } else {
+                    api.toast({ msg: '当前已是最新版本 (v' + currentVersion + ')', duration: 2000, location: 'bottom' });
+                }
             });
         }
+        
+        // ========== 清除缓存（三档分级）==========
+        // 用户进入"清除缓存"后看到二级菜单：
+        //   1) 清除一般缓存   —— about 页缓存 + 缓存文件目录（不动用户配置）
+        //   2) 清除消息记录   —— 当前年 + 历年的 alertRecords_YYYY（不动用户配置）
+        //   3) 重置初始化     —— 所有 prefs + fs:// 备份 + localStorage 全部清空（危险）
+        function showClearCacheMenu() {
+            api.actionSheet({
+                title: '清除缓存',
+                cancelTitle: '取消',
+                destructiveTitle: '',
+                buttons: ['清除一般缓存', '清除消息记录', '重置初始化']
+            }, function(ret, err) {
+                if (ret && ret.buttonIndex !== 0) {
+                    switch (ret.buttonIndex) {
+                        case 1: clearGeneralCache(); break;
+                        case 2: clearAlertRecords(); break;
+                        case 3: resetToFactory(); break;
+                    }
+                }
+                // actionSheet 取消时无需额外动作
+            });
+        }
+
+        // 1) 清除一般缓存（重置用户设置 + 清远程缓存 + 清日志，不动消息记录）
+        // 用户设置（将回到默认值）：
+        //   isListening, targetNumber, enableNumberMatch, keywords, matchLogic, alertVolume, selectedSound
+        // 缓存（远程内容缓存）：
+        //   aboutHtmlCache, aboutHtmlCacheTime, aboutMarkdownCache
+        // 日志：通知 homeFrame 调用 clearLogs() 清空 UI
+        // 不动：alertRecords_YYYY（消息记录）、recentSMS（短信去重）
+        function clearGeneralCache() {
+            api.confirm({
+                title: '重置用户设置并清除缓存',
+                msg: '此操作将：\n• 重置监听设置（号码、关键词、音量、音效等）到默认值\n• 清除"关于应用"页的远程内容缓存\n• 清空首页日志\n\n不影响您的警报记录。\n\n确定继续？',
+                buttons: ['取消', '确定清除']
+            }, function(ret) {
+                if (ret.buttonIndex !== 2) return;
+                api.showProgress({ title: '清除中…', modal: true });
+                try {
+                    // 1) 清内存缓存（about 内容）
+                    cachedAboutHtml = null;
+                    cachedVersionInfo = null;
+                    aboutCacheTimestamp = 0;
+                    versionCacheTimestamp = 0;
+                    // 2) 清 prefs：用户配置 + 缓存
+                    var userConfigKeys = [
+                        'isListening', 'targetNumber', 'enableNumberMatch',
+                        'keywords', 'matchLogic', 'alertVolume', 'selectedSound'
+                    ];
+                    var cacheKeys = [
+                        'aboutHtmlCache', 'aboutHtmlCacheTime', 'aboutMarkdownCache',
+                        '_aboutRefreshBuffer', '_aboutRefreshBufferMd'  // 临时刷新缓冲
+                    ];
+                    var allKeys = userConfigKeys.concat(cacheKeys);
+                    allKeys.forEach(function(k) {
+                        try { api.removePrefs({ key: k }); } catch (e) {}
+                    });
+                    // 3) 清 fs://prefs_backup/ 下的同名文件
+                    allKeys.forEach(function(k) {
+                        try { api.removeFile({ path: 'fs://prefs_backup/' + k + '.json' }); } catch (e) {}
+                    });
+                    // 4) 清 fs://prefs_backup/aboutHtmlCache.html / aboutMarkdownCache.md
+                    try { api.removeFile({ path: 'fs://prefs_backup/aboutHtmlCache.html' }); } catch (e) {}
+                    try { api.removeFile({ path: 'fs://prefs_backup/aboutMarkdownCache.md' }); } catch (e) {}
+                    // 5) 清临时刷新缓冲（如果存在）
+                    try { api.removeFile({ path: 'fs://prefs_backup/_aboutRefreshBuffer.json' }); } catch (e) {}
+                    try { api.removeFile({ path: 'fs://prefs_backup/_aboutRefreshBufferMd.json' }); } catch (e) {}
+                    // 6) 通知 homeFrame 重置 UI 状态 + 清空日志
+                    //    （轻量 execScript：只调用函数名和重置指令，不传长字符串）
+                    try {
+                        api.execScript({
+                            frameName: 'homeFrame',
+                            script: 'resetUserConfig && resetUserConfig(); clearLogs && clearLogs();'
+                        });
+                    } catch (e) {
+                        console.log('通知 homeFrame 重置失败: ' + e.message);
+                    }
+                    api.hideProgress();
+                    api.toast({
+                        msg: '用户设置和缓存已重置，消息记录保留',
+                        duration: 2000,
+                        location: 'bottom'
+                    });
+                } catch (e) {
+                    api.hideProgress();
+                    api.alert({ title: '失败', msg: '清除失败：' + e.message, buttons: ['确定'] });
+                }
+            });
+        }
+
+        // 2) 清除消息记录（只清 alertRecords_YYYY，不动用户配置）
+        function clearAlertRecords() {
+            api.confirm({
+                title: '清除消息记录',
+                msg: '将清除所有年份的警报记录（不影响您的设置）。此操作不可恢复，确定继续？',
+                buttons: ['取消', '确定清除']
+            }, function(ret) {
+                if (ret.buttonIndex !== 2) return;
+                api.showProgress({ title: '清除中…', modal: true });
+                try {
+                    var currentYear = new Date().getFullYear();
+                    // 清理近 5 年的记录（含当年），年份不够就继续往上推
+                    var years = [currentYear];
+                    for (var yi = 1; yi < 10; yi++) years.push(currentYear - yi);
+                    years.forEach(function(y) {
+                        var key = 'alertRecords_' + y;
+                        try { api.removePrefs({ key: key }); } catch (e) {}
+                        try { api.removeFile({ path: 'fs://prefs_backup/' + key + '.json' }); } catch (e) {}
+                    });
+                    api.hideProgress();
+                    api.toast({ msg: '消息记录已清除', duration: 2000, location: 'bottom' });
+                    // 通知 monitor 页面刷新（如果有打开的统计页）
+                    api.execScript({
+                        frameName: 'homeFrame',
+                        script: 'if(typeof reloadAlertRecords === "function") reloadAlertRecords();'
+                    });
+                } catch (e) {
+                    api.hideProgress();
+                    api.alert({ title: '失败', msg: '清除失败：' + e.message, buttons: ['确定'] });
+                }
+            });
+        }
+
+        // 3) 重置初始化（清空所有用户数据，回到出厂状态）
+        // 包括：所有 prefs + fs://prefs_backup/ 整个目录 + localStorage.recentSMS
+        function resetToFactory() {
+            api.confirm({
+                title: '⚠️ 重置初始化',
+                msg: '此操作将清空所有用户数据（包括监听设置、关键词、警报记录等），应用将恢复到刚安装时的状态。\n\n确定要继续吗？',
+                buttons: ['取消', '我已确认，继续重置']
+            }, function(ret) {
+                if (ret.buttonIndex !== 2) return;
+                // 二次确认（防止误操作）
+                api.confirm({
+                    title: '最终确认',
+                    msg: '请再次确认：所有数据将被永久删除且无法恢复。',
+                    buttons: ['取消', '确定重置']
+                }, function(ret2) {
+                    if (ret2.buttonIndex !== 2) return;
+                    api.showProgress({ title: '重置中…', modal: true });
+                    try {
+                        // 清内存缓存
+                        cachedAboutHtml = null;
+                        cachedVersionInfo = null;
+                        aboutCacheTimestamp = 0;
+                        versionCacheTimestamp = 0;
+                        // 待清空的 prefs keys（用户配置 + 缓存）
+                        var allKeys = [
+                            'isListening', 'targetNumber', 'enableNumberMatch',
+                            'keywords', 'matchLogic', 'alertVolume', 'selectedSound',
+                            'aboutHtmlCache', 'aboutHtmlCacheTime', 'aboutMarkdownCache'
+                        ];
+                        // 加上近 10 年的警报记录
+                        var currentYear = new Date().getFullYear();
+                        for (var i = 0; i < 10; i++) {
+                            allKeys.push('alertRecords_' + (currentYear - i));
+                        }
+                        allKeys.forEach(function(k) {
+                            try { api.removePrefs({ key: k }); } catch (e) {}
+                        });
+                        // 清 fs://prefs_backup/ 整个目录
+                        try {
+                            api.rmdir({
+                                path: 'fs://prefs_backup/',
+                                force: true
+                            });
+                        } catch (e) {}
+                        // 清 localStorage
+                        try {
+                            if (window.localStorage) {
+                                window.localStorage.removeItem('recentSMS');
+                            }
+                            // 同时通知 homeFrame：清 localStorage + 重置 UI + 清日志 + 刷新警报记录
+                            // 否则用户重启 APP 之前看不到生效（体验割裂）
+                            try {
+                                api.execScript({
+                                    frameName: 'homeFrame',
+                                    script: 'if(window.localStorage){window.localStorage.removeItem("recentSMS");} resetUserConfig && resetUserConfig(); clearLogs && clearLogs(); if(typeof reloadAlertRecords === "function") reloadAlertRecords();'
+                                });
+                            } catch (e) {
+                                console.log('通知 homeFrame 重置失败: ' + e.message);
+                            }
+                        } catch (e) {}
+                        api.hideProgress();
+                        api.alert({
+                            title: '重置完成',
+                            msg: '已恢复出厂状态，应用将自动退出。\n\n下次启动将看到初始默认设置。',
+                            buttons: ['确定']
+                        }, function() {
+                            api.closeWidget();
+                        });
+                    } catch (e) {
+                        api.hideProgress();
+                        api.alert({ title: '失败', msg: '重置失败：' + e.message, buttons: ['确定'] });
+                    }
+                });
+            });
+        }
+
+        // 导出所有数据
+        function exportAllData() {
+            exportImportData('export');
+        }
+
+        // 导入数据
+        // 流程：用 APICloud 官方 fileBrowser 模块弹出系统文件管理器，用户像平时选文件一样选 JSON 备份
+        // 注：之前的方案（fs 模块 readDir + actionSheet）体验不好，用户希望直接用文件管理器选
+        function importAllData() {
+            api.confirm({
+                title: '导入数据',
+                msg: '导入会与现有数据合并（按规则去重，不会覆盖您的设置）。继续？',
+                buttons: ['取消', '选择备份文件']
+            }, function(ret) {
+                if (ret.buttonIndex !== 2) return;
+                pickBackupFileAndImport();
+            });
+        }
+
+        // 用 fileBrowser 模块弹出文件管理器选 JSON 文件
+        // 严格按照官方 API 文档：
+        //   fileBrowser.open({params}, function(ret) {...})
+        //   params 字段：confirm（bool）、path（string，fs:// 沙盒路径 或 系统绝对路径）
+        //   回调 ret 字段：{ url, name, date, size, confirm, folderPath? }
+// 关键：path 可以传 fs:// 沙盒路径，也可以传系统绝对路径（如 /storage/emulated/0/）
+// 提供两种模式，用户自由选择：
+//   1) APP 沙盒模式（fs://HelloApp）：导出默认目录，可进入其子目录
+//   2) SD 卡根目录模式（/storage/emulated/0/）：访问手机存储公共目录（微信、QQ 传输文件夹等）
+// 每次进入都让用户重新选择模式（不记忆模式）
+// 使用 confirm 的三按钮功能直接一次弹窗完成选择（避免弹两次窗打断流程）
+        var APP_SANDBOX_DIR = 'fs://HelloApp'; // 导出默认目录（APP 沙盒）
+        var SDCARD_ROOT_DIR = '/storage/emulated/0/'; // SD 卡根目录
+        function pickBackupFileAndImport() {
+            // 0) 读取上次使用的目录（用于提示用户，但不做自动定位）
+            var lastFile = null;
+            try {
+                lastFile = api.getPrefs({ sync: true, key: 'lastImportFile' });
+            } catch (e) {}
+            console.log('[import] pickBackupFileAndImport, lastFile=' + lastFile);
+
+            // 1) 一次性弹窗：3 个按钮
+            // 文档说明：confirm 支持 2-3 个按钮，buttonIndex 从 1 开始
+            //   1 → APP 目录
+            //   2 → SD 目录
+            //   3 → 取消
+            var hintMsg = '请选择备份文件位置：\n\n';
+            if (lastFile) {
+                hintMsg += '上次导入的文件：\n' + lastFile + '\n\n';
+            }
+            hintMsg += '• APP 目录（fs://HelloApp）：导出默认位置，可进入子目录\n';
+            hintMsg += '• SD 目录（/storage/emulated/0/）：访问手机公共目录（微信/QQ 传输文件夹等）';
+
+            api.confirm({
+                title: '选择备份文件',
+                msg: hintMsg,
+                buttons: ['APP 目录', 'SD 目录', '取消']
+            }, function(ret) {
+                var idx = ret.buttonIndex;
+                console.log('[import] confirm buttonIndex=' + idx);
+
+                var startDir = null;
+                if (idx === 1) {
+                    startDir = APP_SANDBOX_DIR;
+                } else if (idx === 2) {
+                    startDir = SDCARD_ROOT_DIR;
+                } else {
+                    // 取消（buttonIndex === 3 或其他）
+                    return;
+                }
+                console.log('[import] startDir=' + startDir);
+
+                // 2) 加载 fileBrowser 模块
+                var fb;
+                try {
+                    fb = api.require('fileBrowser');
+                } catch (e) {
+                    api.alert({
+                        title: 'fileBrowser 模块未绑定',
+                        msg: '无法加载 fileBrowser 模块，请到 APICloud yonBuilder 平台绑定官方 fileBrowser 模块后重新编译。\n\n错误：' + e.message,
+                        buttons: ['确定']
+                    });
+                    return;
+                }
+                if (!fb || typeof fb.open !== 'function') {
+                    api.alert({
+                        title: 'fileBrowser 模块异常',
+                        msg: 'fileBrowser 模块已加载但不支持 open()，请检查模块版本。',
+                        buttons: ['确定']
+                    });
+                    return;
+                }
+
+                // 记录 open 时间戳，用于过滤"立即触发"的空回调
+                window.__fbOpenTime = Date.now();
+
+                // 3) 调用文件管理器
+                var openParams = {
+                    path: startDir
+                };
+                console.log('[import] fileBrowser.open params=' + JSON.stringify(openParams));
+
+                try {
+                    fb.open(openParams, function(ret) {
+                        console.log('[import] fileBrowser callback fired, ret=' + JSON.stringify(ret));
+                        onFileBrowserResult(ret);
+                    });
+                } catch (e) {
+                    console.log('[import] fb.open threw: ' + e.message);
+                    api.alert({
+                        title: '打开失败',
+                        msg: 'fileBrowser.open 调用失败：' + e.message,
+                        buttons: ['确定']
+                    });
+                }
+            });
+        }
+
+        // fileBrowser 回调处理（按官方文档：ret 是单文件对象 { url, name, date, size } 或 { confirm: true }）
+        function onFileBrowserResult(ret) {
+            console.log('[import] onFileBrowserResult ret=' + JSON.stringify(ret));
+
+            // 过滤"立即触发"的空回调
+            var elapsed = Date.now() - (window.__fbOpenTime || 0);
+            if (!ret || (typeof ret === 'object' && Object.keys(ret).length === 0)) {
+                if (elapsed < 500) {
+                    console.log('[import] 忽略立即触发的空回调（耗时 ' + elapsed + 'ms）');
+                    return;
+                }
+                api.toast({ msg: '已取消', duration: 1000, location: 'bottom' });
+                return;
+            }
+
+            // 如果是 confirm 模式（ret.confirm === true，表示返回了选中的目录路径）
+            if (ret.confirm === true) {
+                // folderPath 是选中的目录路径数组
+                console.log('[import] confirm=true, folderPath=' + JSON.stringify(ret.folderPath));
+                // 这不是用户最终选的文件，而是"进入选择界面"的信号
+                // 真正选完文件后会再回调一次带 url 的 ret
+                return;
+            }
+
+            // 正常返回：单文件 { url, name, date, size }
+            var filePath = ret.url;
+            var fileName = ret.name;
+            console.log('[import] selected file: url=' + filePath + ', name=' + fileName);
+
+            if (!filePath) {
+                api.alert({
+                    title: '错误',
+                    msg: '选中的文件路径无效：' + JSON.stringify(ret),
+                    buttons: ['确定']
+                });
+                return;
+            }
+
+            // 记录"上次使用的文件路径"
+            try {
+                api.setPrefs({ key: 'lastImportFile', value: filePath });
+                var lastIdx = filePath.lastIndexOf('/');
+                if (lastIdx > 0) {
+                    var parentDir = filePath.substring(0, lastIdx + 1);
+                    api.setPrefs({ key: 'lastImportDir', value: parentDir });
+                }
+            } catch (e) {}
+
+            // 反馈 + 读取
+            api.toast({
+                msg: '已选文件，正在读取…',
+                duration: 1500,
+                location: 'middle'
+            });
+            readSelectedBackupFile(filePath);
+        }
+
+        // 读选中的备份文件并解析
+        // 优先用 fs 模块（fileBrowser 配套，权限最稳），降级到 api.readFile
+        function readSelectedBackupFile(filePath) {
+            console.log('[import] readSelectedBackupFile start, path=' + filePath);
+            api.showProgress({ title: '读取中…', modal: true });
+
+            function onContent(content) {
+                api.hideProgress();
+                console.log('[import] onContent called, length=' + (content ? content.length : 0));
+                if (!content) {
+                    api.alert({
+                        title: '读取失败',
+                        msg: '文件内容为空：' + filePath,
+                        buttons: ['确定']
+                    });
+                    return;
+                }
+                try {
+                    JSON.parse(content);
+                } catch (e) {
+                    api.alert({
+                        title: '文件格式错误',
+                        msg: '所选文件不是有效的 JSON 格式：\n' + filePath + '\n\n错误：' + e.message,
+                        buttons: ['确定']
+                    });
+                    return;
+                }
+                api.toast({
+                    msg: '文件读取成功，准备导入…',
+                    duration: 1500,
+                    location: 'middle'
+                });
+                setTimeout(function() {
+                    parseAndImport(content);
+                }, 300);
+            }
+
+            // 优先用 fs 模块（推荐）
+            var fsModule = null;
+            try {
+                fsModule = api.require('fs');
+            } catch (e) {
+                console.log('[import] api.require(fs) failed: ' + e.message);
+            }
+
+            if (fsModule && typeof fsModule.readFile === 'function') {
+                console.log('[import] using fs.readFile');
+                fsModule.readFile({
+                    path: filePath
+                }, function(ret, err) {
+                    console.log('[import] fs.readFile callback: ret=' + JSON.stringify(ret).substring(0, 200) + ', err=' + JSON.stringify(err));
+                    if (err) {
+                        console.log('[import] fs.readFile 失败，降级到 api.readFile');
+                        fallbackRead();
+                        return;
+                    }
+                    var content = null;
+                    if (ret) {
+                        if (typeof ret === 'string') {
+                            content = ret;
+                        } else {
+                            content = ret.data || ret.content;
+                        }
+                    }
+                    onContent(content);
+                });
+                return;
+            }
+
+            // 降级：用 api.readFile
+            console.log('[import] fs 模块不可用，使用 api.readFile');
+            fallbackRead();
+
+            function fallbackRead() {
+                try {
+                    api.readFile({
+                        path: filePath
+                    }, function(ret, err) {
+                        console.log('[import] api.readFile callback: ret=' + JSON.stringify(ret).substring(0, 200) + ', err=' + JSON.stringify(err));
+                        if (err) {
+                            api.hideProgress();
+                            api.alert({
+                                title: '读取失败',
+                                msg: '无法读取文件：' + filePath + '\n\n错误：' + (err.msg || JSON.stringify(err)) + '\n\n可能原因：\n1. 文件已被删除或移动\n2. 文件权限不足（需要在系统文件管理器中允许 APP 访问）\n3. 文件正被其他程序占用',
+                                buttons: ['确定']
+                            });
+                            return;
+                        }
+                        if (ret && ret.data) {
+                            onContent(ret.data);
+                        } else {
+                            api.hideProgress();
+                            api.alert({
+                                title: '读取失败',
+                                msg: '文件内容为空或无法读取：' + filePath,
+                                buttons: ['确定']
+                            });
+                        }
+                    });
+                } catch (e) {
+                    api.hideProgress();
+                    api.alert({ title: '错误', msg: '读取异常：' + e.message, buttons: ['确定'] });
+                }
+            }
+        }
+
+        // ========== 数据导出/导入 ==========
+        // 数据导出/导入涉及以下数据项：
+        //   prefs：
+        //     - isListening, targetNumber, enableNumberMatch, keywords, matchLogic,
+        //       alertVolume, selectedSound（用户配置：监听开关/号码/关键词/音量/音效）
+        //     - alertRecords_YYYY（年度警报记录）
+        //     - aboutHtmlCache, aboutHtmlCacheTime, aboutMarkdownCache（关于页缓存）
+        //   localStorage：
+        //     - recentSMS（短信去重记录）
+        //
+        // 去重策略：
+        //   - 用户配置项（keywords、targetNumber 等）：导入值仅在本地为空时填充，不覆盖
+        //   - 警报记录（alertRecords）：按 id 去重，保留时间戳较早的，导入新增的
+        //   - 缓存项（aboutHtmlCache）：导入值仅在本地为空时填充
+        //
+        // action: 'export' | 'import'
+
+        // 需要备份/恢复的 prefs keys 定义
+        var BACKUP_KEYS_CONFIG = [
+            'isListening', 'targetNumber', 'enableNumberMatch',
+            'keywords', 'matchLogic', 'alertVolume', 'selectedSound'
+        ];
+        var BACKUP_KEYS_CACHE = [
+            'aboutHtmlCache', 'aboutHtmlCacheTime', 'aboutMarkdownCache'
+        ];
+        // 警报记录 key 是动态的，按年份生成（近 10 年）
+        function getAlertRecordKeys() {
+            var currentYear = new Date().getFullYear();
+            var keys = [];
+            for (var i = 0; i < 10; i++) {
+                keys.push('alertRecords_' + (currentYear - i));
+            }
+            return keys;
+        }
+
+        // 安全读 prefs（setPrefs 优先，fs:// 兜底）
+        function backupGet(key) {
+            try {
+                var v = api.getPrefs({ sync: true, key: key });
+                if (v) return v;
+            } catch (e) {}
+            try {
+                var fs = api.readFile({ sync: true, path: 'fs://prefs_backup/' + key + '.json' });
+                if (fs && fs.data) return fs.data;
+            } catch (e) {}
+            return null;
+        }
+
+        // 安全写 prefs（setPrefs 优先，fs:// 兜底）
+        function backupSet(key, value) {
+            try {
+                api.setPrefs({ key: key, value: value });
+                return true;
+            } catch (e) {
+                try {
+                    api.writeFile({
+                        path: 'fs://prefs_backup/' + key + '.json',
+                        data: value
+                    });
+                    return true;
+                } catch (e2) {
+                    return false;
+                }
+            }
+        }
+
+        // 收集所有数据 → JSON
+        function collectAllData() {
+            var data = {
+                _meta: {
+                    appName: '交警短信增强提醒',
+                    exportTime: new Date().toISOString(),
+                    appVersion: api.appVersion || '1.0.0',
+                    version: '1.0'  // 备份格式版本号（导入时校验）
+                },
+                prefs: {},
+                localStorage: {}
+            };
+            // 备份用户配置
+            BACKUP_KEYS_CONFIG.forEach(function(k) {
+                var v = backupGet(k);
+                if (v) data.prefs[k] = v;
+            });
+            // 备份缓存
+            BACKUP_KEYS_CACHE.forEach(function(k) {
+                var v = backupGet(k);
+                if (v) data.prefs[k] = v;
+            });
+            // 备份警报记录
+            data.alertRecords = {};
+            getAlertRecordKeys().forEach(function(k) {
+                var v = backupGet(k);
+                if (v) data.alertRecords[k] = v;
+            });
+            // 备份 localStorage
+            try {
+                var recentSMS = localStorage.getItem('recentSMS');
+                if (recentSMS) data.localStorage.recentSMS = recentSMS;
+            } catch (e) {}
+            return data;
+        }
+
+        // ========== 导出 ==========
+        function exportImportData(action) {
+            if (action === 'export') {
+                doExport();
+            } else if (action === 'import') {
+                // 预留入口（已通过 importAllData 直接调用 pickFileAndImport/importFromClipboard）
+            }
+        }
+
+        function doExport() {
+            api.showProgress({ title: '正在导出数据…', modal: true });
+            var data = collectAllData();
+            var jsonStr;
+            try {
+                jsonStr = JSON.stringify(data, null, 2);
+            } catch (e) {
+                api.hideProgress();
+                api.alert({ title: '导出失败', msg: '数据序列化失败：' + e.message, buttons: ['确定'] });
+                return;
+            }
+
+            var fileName = 'HelloApp-backup-' + formatDateForFile(new Date()) + '.json';
+
+            // 写本地文件（fs:// 路径）
+            var savePath = 'fs://HelloApp/' + fileName;
+            try {
+                api.writeFile({
+                    path: savePath,
+                    data: jsonStr
+                }, function(ret, err) {
+                    api.hideProgress();
+                    if (ret && ret.status) {
+                        // 询问用户如何处理：分享 / 保存到相册 / 打开文件管理器
+                        api.actionSheet({
+                            title: '导出成功（' + formatBytes(jsonStr.length) + '）',
+                            cancelTitle: '完成',
+                            destructiveTitle: '',
+                            buttons: ['分享文件', '保存到相册（仅文件名提示）', '查看文件位置']
+                        }, function(ret2) {
+                            if (!ret2 || ret2.buttonIndex === 0) return;
+                            if (ret2.buttonIndex === 1) {
+                                shareExportedFile(savePath);
+                            } else if (ret2.buttonIndex === 2) {
+                                // 保存到相册：APICloud 提供 api.saveMediaToAlbum 但仅支持图片/视频；
+                                // 对 JSON 文件用分享更合适，这里提示用户用 ES 文件浏览器复制
+                                api.alert({
+                                    title: '已保存',
+                                    msg: '文件已保存到：\n' + savePath + '\n\n请使用文件管理器应用复制或发送。',
+                                    buttons: ['确定']
+                                });
+                            } else if (ret2.buttonIndex === 3) {
+                                api.alert({
+                                    title: '文件位置',
+                                    msg: '导出文件：\n' + savePath,
+                                    buttons: ['确定']
+                                });
+                            }
+                        });
+                    } else {
+                        api.alert({ title: '导出失败', msg: '写入文件失败：' + (err ? err.msg : '未知错误'), buttons: ['确定'] });
+                    }
+                });
+            } catch (e) {
+                api.hideProgress();
+                api.alert({ title: '导出失败', msg: e.message, buttons: ['确定'] });
+            }
+        }
+
+        function shareExportedFile(filePath) {
+            try {
+                var shareModule = api.require('shareAction');
+                if (shareModule) {
+                    shareModule.share({
+                        path: filePath,
+                        type: 'file'
+                    });
+                } else {
+                    api.toast({ msg: '分享模块不可用，文件已保存', duration: 2000, location: 'bottom' });
+                }
+            } catch (e) {
+                api.toast({ msg: '分享失败：' + e.message, duration: 2000, location: 'middle' });
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+        }
+
+        function formatDateForFile(d) {
+            var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+            return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate())
+                 + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+        }
+
+        // ========== 导入 ==========
+
+        // 从文件绝对路径导入（备用入口：用户可手动输入 JSON 完整路径）
+        function importFromFilePath() {
+            api.prompt({
+                title: '输入 JSON 文件绝对路径',
+                msg: '示例：/storage/emulated/0/HelloApp-backup-20260802-153045.json\n\n注：主流程已改为从默认目录选择，一般无需使用此功能。',
+                buttons: ['取消', '读取']
+            }, function(ret) {
+                if (ret.buttonIndex === 2 && ret.text) {
+                    readSelectedBackupFile(ret.text);
+                }
+            });
+        }
+
+        // 从剪贴板导入（先复制 JSON 文本，再点导入）
+        function importFromClipboard() {
+            try {
+                var clip = api.require('clipBoard');
+                if (!clip) {
+                    api.alert({ title: '失败', msg: '剪贴板模块不可用', buttons: ['确定'] });
+                    return;
+                }
+                clip.get({
+                    value: ''
+                }, function(ret, err) {
+                    if (ret && ret.value) {
+                        parseAndImport(ret.value);
+                    } else {
+                        api.alert({ title: '提示', msg: '剪贴板为空，请先复制 JSON 文本', buttons: ['确定'] });
+                    }
+                });
+            } catch (e) {
+                api.alert({ title: '失败', msg: e.message, buttons: ['确定'] });
+            }
+        }
+
+        // 解析 JSON 并执行导入合并
+        function parseAndImport(jsonText) {
+            if (!jsonText || typeof jsonText !== 'string') {
+                api.alert({ title: '失败', msg: '数据为空', buttons: ['确定'] });
+                return;
+            }
+            var data;
+            try {
+                data = JSON.parse(jsonText);
+            } catch (e) {
+                api.alert({ title: '解析失败', msg: 'JSON 格式错误：' + e.message, buttons: ['确定'] });
+                return;
+            }
+            // 校验备份格式
+            if (!data || !data._meta) {
+                api.alert({
+                    title: '格式不匹配',
+                    msg: '此文件不是交警短信APP的备份文件（缺少 _meta 标识）',
+                    buttons: ['确定']
+                });
+                return;
+            }
+            // 显示导入预览 + 确认
+            showImportPreview(data);
+        }
+
+        function showImportPreview(data) {
+            var prefsCount = data.prefs ? Object.keys(data.prefs).length : 0;
+            var recordsCount = 0;
+            if (data.alertRecords) {
+                for (var k in data.alertRecords) {
+                    try {
+                        var arr = JSON.parse(data.alertRecords[k]);
+                        if (Array.isArray(arr)) recordsCount += arr.length;
+                    } catch (e) {}
+                }
+            }
+            var localStorageCount = data.localStorage ? Object.keys(data.localStorage).length : 0;
+
+            var meta = data._meta || {};
+            var exportTime = meta.exportTime || '未知';
+            var appVersion = meta.appVersion || '未知';
+
+            // 友好显示导出时间
+            var exportTimeDisplay = exportTime;
+            function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+            try {
+                var d = new Date(exportTime);
+                if (!isNaN(d.getTime())) {
+                    exportTimeDisplay = d.getFullYear() + '-'
+                        + pad2(d.getMonth() + 1) + '-'
+                        + pad2(d.getDate()) + ' '
+                        + pad2(d.getHours()) + ':'
+                        + pad2(d.getMinutes());
+                }
+            } catch (e) {}
+
+            var msg = ''
+                + '备份来源：' + (meta.appName || '未知APP') + ' v' + appVersion + '\n'
+                + '导出时间：' + exportTimeDisplay + '\n'
+                + '配置项：' + prefsCount + ' 个\n'
+                + '警报记录：约 ' + recordsCount + ' 条\n'
+                + '本地存储：' + localStorageCount + ' 项\n\n'
+                + '导入方式：合并（按规则去重，不覆盖现有设置）';
+
+            api.confirm({
+                title: '导入预览',
+                msg: msg,
+                buttons: ['取消', '开始导入']
+            }, function(ret) {
+                if (ret.buttonIndex !== 2) return;
+                performImport(data);
+            });
+        }
+
+        // 执行实际导入
+        function performImport(data) {
+            api.showProgress({ title: '正在导入…', modal: true });
+            var stats = {
+                prefsImported: 0,
+                prefsSkipped: 0,
+                recordsImported: 0,
+                recordsSkipped: 0,
+                localStorageImported: 0
+            };
+
+            try {
+                // 1) 导入用户配置（仅在本地为空时填充，避免覆盖现有设置）
+                if (data.prefs) {
+                    BACKUP_KEYS_CONFIG.forEach(function(k) {
+                        if (!data.prefs[k]) return; // 备份里没这项
+                        var localVal = backupGet(k);
+                        if (localVal) {
+                            stats.prefsSkipped++;
+                        } else {
+                            if (backupSet(k, data.prefs[k])) {
+                                stats.prefsImported++;
+                            }
+                        }
+                    });
+                    // 缓存项（aboutHtmlCache 等）：如果本地为空，导入；否则跳过
+                    BACKUP_KEYS_CACHE.forEach(function(k) {
+                        if (!data.prefs[k]) return;
+                        var localVal = backupGet(k);
+                        if (!localVal) {
+                            if (backupSet(k, data.prefs[k])) {
+                                stats.prefsImported++;
+                            }
+                        } else {
+                            stats.prefsSkipped++;
+                        }
+                    });
+                }
+
+                // 2) 导入警报记录（按 id 去重合并）
+                if (data.alertRecords) {
+                    for (var yearKey in data.alertRecords) {
+                        if (!/^alertRecords_\d{4}$/.test(yearKey)) continue; // 格式校验
+                        var importedRecords;
+                        try {
+                            importedRecords = JSON.parse(data.alertRecords[yearKey]);
+                        } catch (e) {
+                            continue;
+                        }
+                        if (!Array.isArray(importedRecords)) continue;
+
+                        var localRaw = backupGet(yearKey);
+                        var localRecords = [];
+                        if (localRaw) {
+                            try { localRecords = JSON.parse(localRaw); } catch (e) { localRecords = []; }
+                        }
+
+                        // 按 id 去重（id 为主，其次用 sender+timestamp 兜底）
+                        var idMap = {};
+                        var resultRecords = localRecords.slice();
+                        localRecords.forEach(function(r) {
+                            if (r && r.id) idMap[r.id] = true;
+                        });
+
+                        importedRecords.forEach(function(r) {
+                            if (!r) return;
+                            var key = r.id;
+                            if (!key) {
+                                // 兜底：旧版本数据可能没有 id 字段，用 phoneNumber+content+date 拼一个稳定 key
+                                key = (r.phoneNumber || '') + '|' + (r.content || '') + '|' + (r.date || '');
+                            }
+                            if (idMap[key]) {
+                                stats.recordsSkipped++;
+                                return;
+                            }
+                            idMap[key] = true;
+                            resultRecords.push(r);
+                            stats.recordsImported++;
+                        });
+
+                        // 按 timestamp 倒序（timestamp 是 ISO 字符串，new Date() 能解析）
+                        resultRecords.sort(function(a, b) {
+                            return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+                        });
+
+                        // 写回
+                        backupSet(yearKey, JSON.stringify(resultRecords));
+                    }
+                }
+
+                // 3) 导入 localStorage
+                // 注意：recentSMS 是单条对象 {timestamp, tel, content}（不是数组），按"哪个时间戳更新"取较大者
+                if (data.localStorage) {
+                    for (var lsKey in data.localStorage) {
+                        var localLsVal = null;
+                        try { localLsVal = localStorage.getItem(lsKey); } catch (e) {}
+                        if (localLsVal) {
+                            // 本地已有：按字段去重
+                            try {
+                                if (lsKey === 'recentSMS') {
+                                    // 对象格式：取 timestamp 较大者（更新覆盖更早的）
+                                    var impObj = JSON.parse(data.localStorage[lsKey]);
+                                    var locObj = JSON.parse(localLsVal);
+                                    if ((impObj && impObj.timestamp || 0) > (locObj.timestamp || 0)) {
+                                        localStorage.setItem(lsKey, JSON.stringify(impObj));
+                                        stats.localStorageImported++;
+                                    } else {
+                                        // 不覆盖，跳过
+                                    }
+                                } else {
+                                    // 其他 key：本地有就跳过（不覆盖）
+                                }
+                            } catch (e) {}
+                            continue;
+                        }
+                        // 本地为空：直接写入
+                        try {
+                            localStorage.setItem(lsKey, data.localStorage[lsKey]);
+                            stats.localStorageImported++;
+                        } catch (e) {}
+                    }
+                }
+
+                api.hideProgress();
+                api.alert({
+                    title: '导入完成',
+                    msg: ''
+                        + '配置项：导入 ' + stats.prefsImported + ' 项，跳过 ' + stats.prefsSkipped + ' 项（本地已存在）\n'
+                        + '警报记录：导入 ' + stats.recordsImported + ' 条，跳过 ' + stats.recordsSkipped + ' 条（重复）\n'
+                        + '本地存储：导入 ' + stats.localStorageImported + ' 项\n\n'
+                        + '建议重启应用以使设置生效。',
+                    buttons: ['确定']
+                }, function() {
+                    // 通知 monitor 页面刷新警报记录
+                    api.execScript({
+                        frameName: 'homeFrame',
+                        script: 'if(typeof reloadAlertRecords === "function") reloadAlertRecords();'
+                    });
+                });
+            } catch (e) {
+                api.hideProgress();
+                api.alert({ title: '导入失败', msg: e.message, buttons: ['确定'] });
+            }
+        }
+
+        // ========== OSS 远程功能 ==========
+
+        // 从 OSS 拉取 about.md（开发者通知）
+        // 流程：内存缓存 → 网络拉取 → 失败时本地缓存兜底
+        // force=true 时跳过内存缓存，强制重新拉取（用于 about 页"刷新"按钮）
+        function fetchAboutContent(callback, force) {
+            // 内存缓存命中（强制刷新时跳过）
+            if (!force && cachedAboutHtml && (Date.now() - aboutCacheTimestamp < CACHE_TTL)) {
+                callback(cachedAboutHtml, null);
+                return;
+            }
+            // 走网络
+            api.ajax({
+                url: ABOUT_MD_URL,
+                method: 'get',
+                dataType: 'text',
+                cache: false,
+                timeout: 10
+            }, function(ret, err) {
+                if (ret && typeof ret === 'string') {
+                    var rawMd = ret.trim();
+                    // 缓存原始 MD（用于"分享给朋友"）
+                    lastAboutMarkdown = rawMd;
+                    // MD → HTML：优先用 marked.js，加载失败时用 simpleMarkdown 兜底
+                    // 兼容 v0.8.2 / v9+ 两种 API：v0.8.2 直接 marked() 调用，v9+ 是 marked.parse()
+                    var html;
+                    if (window.marked) {
+                        html = (typeof window.marked.parse === 'function')
+                             ? window.marked.parse(rawMd)
+                             : window.marked(rawMd);
+                    } else {
+                        html = simpleMarkdown(rawMd);
+                    }
+                    console.log('[about] MD 已解析, 长度:', html.length, ', 含 <h2>:', (html.match(/<h2[\s>]/g) || []).length, ', 含 ## 残留:', html.indexOf('##') >= 0);
+                    // 更新内存缓存
+                    cachedAboutHtml = html;
+                    aboutCacheTimestamp = Date.now();
+                    // 持久化到本地（双写 setPrefs + fs:// 兜底）
+                    persistAboutCache(html, rawMd);
+                    callback(html, null);
+                } else {
+                    // 网络失败：尝试读本地缓存做兜底
+                    var fallback = readAboutCache();
+                    if (fallback && !force) {
+                        cachedAboutHtml = fallback.html;
+                        lastAboutMarkdown = fallback.markdown || '';
+                        aboutCacheTimestamp = 0; // 标记为兜底数据（不参与 5 分钟过期判断）
+                        callback(fallback.html, null);
+                    } else {
+                        callback(null, err);
+                    }
+                }
+            });
+        }
+
+        // 极简 Markdown 兜底解析器（仅处理：标题/列表/引用/段落/水平线/加粗/邮箱）
+        // 仅在 marked.js 加载失败时使用，保证页面不会出现裸的 ## * - 符号
+        function simpleMarkdown(md) {
+            if (!md) return '';
+            var lines = md.split(/\r?\n/);
+            var out = [];
+            var listOpen = false;
+            var quoteOpen = false;
+            function flushList() { if (listOpen) { out.push('</ul>'); listOpen = false; } }
+            function flushQuote() { if (quoteOpen) { out.push('</blockquote>'); quoteOpen = false; } }
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i];
+                var trimmed = line.trim();
+                if (!trimmed) { flushList(); flushQuote(); continue; }
+                if (/^###\s+/.test(trimmed)) { flushList(); flushQuote(); out.push('<h3>' + esc(trimmed.replace(/^###\s+/, '')) + '</h3>'); }
+                else if (/^##\s+/.test(trimmed)) { flushList(); flushQuote(); out.push('<h2>' + esc(trimmed.replace(/^##\s+/, '')) + '</h2>'); }
+                else if (/^#\s+/.test(trimmed)) { flushList(); flushQuote(); out.push('<h2>' + esc(trimmed.replace(/^#\s+/, '')) + '</h2>'); }
+                else if (/^---+$/.test(trimmed)) { flushList(); flushQuote(); out.push('<hr>'); }
+                else if (/^[\*\-]\s+/.test(trimmed)) {
+                    flushQuote();
+                    if (!listOpen) { out.push('<ul>'); listOpen = true; }
+                    out.push('<li>' + inline(trimmed.replace(/^[\*\-]\s+/, '')) + '</li>');
+                }
+                else if (/^>\s?/.test(trimmed)) {
+                    // 注意：这里是匹配原文的 ">"，不是 "&gt;"（&gt; 是 esc 之后的）
+                    flushList();
+                    if (!quoteOpen) { out.push('<blockquote>'); quoteOpen = true; }
+                    var q = trimmed.replace(/^>\s?/, '');
+                    out.push(q ? inline(q) : '<br>');
+                }
+                else { flushList(); flushQuote(); out.push('<p>' + inline(trimmed) + '</p>'); }
+            }
+            flushList(); flushQuote();
+            return out.join('\n');
+        }
+        function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+        function inline(s) {
+            s = esc(s);
+            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // 简单的邮箱/URL 自动链接
+            s = s.replace(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z]{2,})/g, '<a href="mailto:$1">$1</a>');
+            return s;
+        }
+
+        // 持久化 about.html 到本地（setPrefs 优先，fs:// 兜底）
+        // 同时持久化原始 MD（用于"分享给朋友"功能）
+        function persistAboutCache(html, markdown) {
+            try {
+                api.setPrefs({ key: 'aboutHtmlCache', value: html });
+                api.setPrefs({ key: 'aboutHtmlCacheTime', value: Date.now().toString() });
+                if (markdown) {
+                    api.setPrefs({ key: 'aboutMarkdownCache', value: markdown });
+                }
+            } catch (e) {
+                // setPrefs 失败 → 写 fs://
+                try {
+                    api.writeFile({
+                        path: 'fs://prefs_backup/aboutHtmlCache.html',
+                        data: html
+                    });
+                    if (markdown) {
+                        api.writeFile({
+                            path: 'fs://prefs_backup/aboutMarkdownCache.md',
+                            data: markdown
+                        });
+                    }
+                } catch (e2) {
+                    console.log('aboutHtml 本地缓存写入失败: ' + e2.message);
+                }
+            }
+        }
+
+        // 读本地 about.html 缓存（setPrefs 优先，fs:// 兜底）
+        // 返回 { html, markdown }；任意一项缺失时该字段为空字符串
+        function readAboutCache() {
+            var html = null;
+            var markdown = null;
+            // 读 HTML
+            try {
+                var v = api.getPrefs({ sync: true, key: 'aboutHtmlCache' });
+                if (v) html = v;
+            } catch (e) {}
+            if (!html) {
+                try {
+                    var fsRet = api.readFile({ sync: true, path: 'fs://prefs_backup/aboutHtmlCache.html' });
+                    if (fsRet && fsRet.data) html = fsRet.data;
+                } catch (e) {}
+            }
+            // 读原始 MD
+            try {
+                var m = api.getPrefs({ sync: true, key: 'aboutMarkdownCache' });
+                if (m) markdown = m;
+            } catch (e) {}
+            if (!markdown) {
+                try {
+                    var fsMd = api.readFile({ sync: true, path: 'fs://prefs_backup/aboutMarkdownCache.md' });
+                    if (fsMd && fsMd.data) markdown = fsMd.data;
+                } catch (e) {}
+            }
+            if (html) {
+                return { html: html, markdown: markdown || '' };
+            }
+            return null;
+        }
+
+        // 从 OSS 拉取 version.json（版本信息）
+        function fetchVersionInfo(callback) {
+            if (cachedVersionInfo && (Date.now() - versionCacheTimestamp < CACHE_TTL)) {
+                callback(cachedVersionInfo, null);
+                return;
+            }
+            api.ajax({
+                url: VERSION_JSON_URL,
+                method: 'get',
+                dataType: 'json',
+                cache: false,
+                timeout: 10
+            }, function(ret, err) {
+                if (ret && typeof ret === 'object') {
+                    cachedVersionInfo = ret;
+                    versionCacheTimestamp = Date.now();
+                    callback(ret, null);
+                } else {
+                    callback(null, err);
+                }
+            });
+        }
+
+        // 注：旧版本曾自研 markdownToHtml()，因 4 个严重 bug 已废弃：
+        //   1) blockquote 合并后中间残留 "><br>>" 字符（JS 中 \$ 转义被吞反斜杠所致）
+        //   2) 每个 <li> 被分散包成多个 <ul>
+        //   3) 段落包裹破坏列表结构（<p></ul>）
+        //   4) HR "---" 在列表后失效
+        // 新方案：fetchAboutContent() 中直接调用 marked.parse(md)
+        // marked.js 见 /script/marked.min.js（v12.0.2，35KB，0 依赖）
+
+        // 版本号比较: v1 > v2 → 1, v1 < v2 → -1, 相等 → 0
+        function compareVersions(v1, v2) {
+            var p1 = String(v1).split('.').map(function(n) { return parseInt(n) || 0; });
+            var p2 = String(v2).split('.').map(function(n) { return parseInt(n) || 0; });
+            var len = Math.max(p1.length, p2.length);
+            for (var i = 0; i < len; i++) {
+                if ((p1[i] || 0) > (p2[i] || 0)) return 1;
+                if ((p1[i] || 0) < (p2[i] || 0)) return -1;
+            }
+            return 0;
+        }
+
+        // 打开关于/更新页面 Frame（全屏页面）
+        function openAboutFrame(mode, currentVersion, data) {
+            var pageParam = {
+                mode: mode,
+                currentVersion: currentVersion
+            };
+            if (mode === 'about') {
+                pageParam.aboutHtml = data;        // about.md 渲染后的 HTML
+                pageParam.aboutMarkdown = lastAboutMarkdown || ''; // 原始 MD（用于分享）
+            } else {
+                pageParam.versionInfo = data;       // version.json 解析后的对象
+            }
+            // 全屏 frame：从顶部 0 到窗口底部，覆盖整个窗口（包括底部导航栏）
+            api.openFrame({
+                name: 'aboutFrame',
+                url: './test_SMS_about.html',
+                rect: {
+                    x: 0,
+                    y: 0,
+                    w: 'auto',
+                    h: 'auto'
+                },
+                bounces: true,                       // 全屏页允许内容弹性滚动
+                bgColor: '#f5f5f7',                  // 与 about.html body 背景色一致（避免白闪）
+                vScrollBarEnabled: true,             // 全屏页允许垂直滚动
+                hScrollBarEnabled: false,
+                pageParam: pageParam
+            });
+            pageFrames.about = 'aboutFrame';
+        }
+
+        // 记忆最近一次解析前的原始 MD（用于"分享给朋友"功能）
+        var lastAboutMarkdown = '';
     </script>
 </body>
 </html>

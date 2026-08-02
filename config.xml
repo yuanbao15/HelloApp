@@ -46,4 +46,15 @@
 	<permission name="readSMS" />
 	<preference name="backgroundMode" value="audio"/>
 
+	<!-- 分享模块（"关于应用"页右上角分享按钮） -->
+	<feature name="shareAction">
+		<param name="iosSafeArea" value="false"/>
+	</feature>
+	<!-- 剪贴板模块（备用的"从剪贴板导入"功能） -->
+	<feature name="clipBoard"/>
+	<!-- 文件浏览器模块（"导入数据"时弹出系统文件管理器，可返回上级浏览任意目录选 JSON） -->
+	<feature name="fileBrowser"/>
+	<!-- 文件系统模块（fileBrowser 选完文件后用 fs.readFile 读取，权限最稳） -->
+	<feature name="fs"/>
+
 </widget>

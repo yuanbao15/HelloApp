@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
+    <title>关于应用</title>
+    <link rel="stylesheet" href="../css/api.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #f5f5f7;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            -webkit-user-select: none;
+            user-select: none;
+            color: #1c1c1e;
+        }
+
+        /* ── 顶部固定栏（替代原 dialog-header）── */
+        .top-bar {
+            position: sticky;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 44px;
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            z-index: 100;
+        }
+        .top-bar-back {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 6px 8px;
+            border: none;
+            background: transparent;
+            color: #007aff;
+            font-size: 15px;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+        .top-bar-back:active { opacity: 0.5; }
+        .top-bar-back .arrow {
+            font-size: 22px;
+            line-height: 1;
+            margin-right: 2px;
+            margin-top: -1px;
+        }
+        .top-bar-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1c1c1e;
+        }
+        .top-bar-actions {
+            display: flex;
+            gap: 4px;
+        }
+        .top-bar-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            color: #007aff;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .top-bar-btn:active { background: rgba(0, 122, 255, 0.1); }
+        .top-bar-btn.spinning { animation: spin 0.8s linear infinite; display: inline-block; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* ── 滚动容器 ── */
+        .scroll-container {
+            padding: 0 0 80px;
+            min-height: 100vh;
+        }
+
+        /* ── 应用信息头部 ── */
+        .app-header {
+            text-align: center;
+            padding: 32px 24px 24px;
+            background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
+        }
+        .app-icon {
+            width: 72px; height: 72px;
+            margin: 0 auto 16px;
+            background: linear-gradient(135deg, #007aff, #4ac7ff);
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            box-shadow: 0 6px 20px rgba(0, 122, 255, 0.25);
+        }
+        .app-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 6px;
+            line-height: 1.3;
+        }
+        .app-version {
+            font-size: 13px;
+            color: #8e8e93;
+            margin-bottom: 10px;
+        }
+        .app-version .badge {
+            display: inline-block;
+            background: #f2f2f7;
+            color: #007aff;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 6px;
+        }
+        .app-desc {
+            font-size: 14px;
+            color: #636366;
+            line-height: 1.6;
+            max-width: 320px;
+            margin: 0 auto;
+        }
+
+        /* ── 卡片通用样式 ── */
+        .card {
+            background: #ffffff;
+            margin: 12px 16px;
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+
+        /* ── 通知卡片（顶部，开发者公告）── */
+        .notice-card {
+            background: linear-gradient(135deg, #f6f9fe 0%, #eaf3ff 100%);
+            border-left: 3px solid #007aff;
+        }
+        .notice-card .notice-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #007aff;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .notice-card .notice-text {
+            font-size: 14px;
+            color: #3a3a3c;
+            line-height: 1.7;
+        }
+        /* marked.js 输出的 <p> 默认有 margin，重置 */
+        .notice-card .notice-text p { margin: 0; }
+        .notice-card .notice-text p + p { margin-top: 8px; }
+
+        /* ── MD 内容区块 ── */
+        .content-section h2 {
+            font-size: 17px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin: 18px 0 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .content-section h2:first-child { margin-top: 0; }
+        .content-section h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            margin: 14px 0 6px;
+        }
+        .content-section p {
+            font-size: 14px;
+            color: #3a3a3c;
+            line-height: 1.75;
+            margin: 8px 0;
+        }
+        .content-section ul {
+            padding-left: 20px;
+            margin: 8px 0 12px;
+        }
+        .content-section ol {
+            padding-left: 20px;
+            margin: 8px 0 12px;
+        }
+        .content-section li {
+            font-size: 14px;
+            color: #3a3a3c;
+            line-height: 1.75;
+            padding: 3px 0;
+        }
+        .content-section li::marker {
+            color: #007aff;
+        }
+        .content-section hr {
+            border: none;
+            border-top: 1px dashed #d1d1d6;
+            margin: 16px 0;
+        }
+        .content-section blockquote {
+            margin: 10px 0;
+            padding: 10px 14px;
+            background: #f6f9fe;
+            border-radius: 8px;
+            border-left: 3px solid #007aff;
+            color: #3a3a3c;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+        .content-section blockquote p { margin: 4px 0; color: #3a3a3c; }
+        .content-section strong { color: #1a1a1a; font-weight: 600; }
+        .content-section code {
+            background: #f2f2f7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #e65100;
+            font-family: 'SF Mono', 'Menlo', monospace;
+        }
+        .content-section pre {
+            background: #1c1c1e;
+            color: #f5f5f7;
+            border-radius: 10px;
+            padding: 12px 14px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin: 10px 0;
+            line-height: 1.5;
+        }
+        .content-section pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+        }
+        .content-section a {
+            color: #007aff;
+            text-decoration: none;
+            word-break: break-all;
+        }
+        .content-section a:active { text-decoration: underline; }
+
+        /* ── 加载/错误状态 ── */
+        .status-msg {
+            text-align: center;
+            padding: 60px 20px;
+            color: #8e8e93;
+            font-size: 14px;
+        }
+        .status-msg .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.6; }
+
+        /* ── 返回顶部按钮 ── */
+        .back-to-top {
+            position: fixed;
+            right: 16px;
+            bottom: 24px;
+            width: 44px;
+            height: 44px;
+            background: rgba(0, 122, 255, 0.9);
+            color: #fff;
+            border: none;
+            border-radius: 22px;
+            font-size: 22px;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .back-to-top.visible {
+            display: flex;
+            animation: fadeUp 0.25s ease;
+        }
+        .back-to-top:active { transform: scale(0.92); }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── update 模式样式（保留兼容）── */
+        .update-meta {
+            background: #fafafa;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 14px;
+        }
+        .update-meta-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+        }
+        .update-meta-row + .update-meta-row {
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        .update-meta-label { color: #8e8e93; font-size: 14px; }
+        .update-meta-value { color: #1c1c1e; font-weight: 600; font-size: 14px; }
+        .update-meta-value.highlight { color: #ff9500; }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1c1c1e;
+            margin: 16px 16px 6px;
+            padding: 0 0 6px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        /* ── 底部固定操作栏（仅 update 模式）── */
+        .bottom-action-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        .bottom-action-bar.hidden { display: none; }
+        .btn {
+            flex: 1;
+            padding: 12px 0;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn:active { opacity: 0.7; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background: #007aff; color: #fff; }
+        .btn-secondary { background: #f2f2f7; color: #1c1c1e; }
+
+        /* 下载进度条 */
+        .progress-bar-wrap {
+            width: 100%;
+            height: 4px;
+            background: #e5e5ea;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 8px;
+            display: none;
+        }
+        .progress-bar-wrap.active { display: block; }
+        .progress-bar {
+            height: 100%;
+            background: #007aff;
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.2s ease;
+        }
+
+        /* ── 适配安全区域：顶部栏高度 ── */
+        @supports (padding-top: env(safe-area-inset-top)) {
+            .top-bar {
+                padding-top: env(safe-area-inset-top);
+                height: calc(44px + env(safe-area-inset-top));
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="top-bar">
+    <button class="top-bar-back" onclick="closePage()">
+        <span class="arrow">‹</span>
+        <span>返回</span>
+    </button>
+    <div class="top-bar-title" id="topBarTitle">关于应用</div>
+    <div class="top-bar-actions">
+        <!-- 刷新按钮（about 模式显示）。
+             不用 SVG 因为某些老 webview 对 SVG 解析会触发 SyntaxError；
+             用 Unicode 字符（🔄）代替，简单且无兼容性风险 -->
+        <button class="top-bar-btn" id="refreshBtn" onclick="refreshAboutContent()" title="刷新内容" style="display:none;">🔄</button>
+        <!-- 分享按钮（about 模式显示）-->
+        <button class="top-bar-btn" id="shareBtn" onclick="shareAboutContent()" title="分享给朋友" style="display:none;">📤</button>
+    </div>
+</div>
+
+<div class="scroll-container" id="scrollContainer">
+    <div id="content"></div>
+</div>
+
+<!-- 返回顶部浮动按钮 -->
+<button class="back-to-top" id="backToTopBtn" onclick="scrollToTop()" title="返回顶部">↑</button>
+
+<!-- 底部操作栏（仅 update 模式使用）-->
+<div class="bottom-action-bar hidden" id="bottomActionBar">
+    <button class="btn btn-secondary" id="cancelBtn" onclick="closePage()">稍后再说</button>
+    <button class="btn btn-primary" id="downloadBtn" onclick="startDownload()">立即更新</button>
+</div>
+<div style="padding: 0 16px; max-width: none; display: none;" id="progressWrapDiv">
+    <div class="progress-bar-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+</div>
+
+<script src="../script/api.js"></script>
+<script>
+    var pageMode = 'about';
+    var currentVersion = (typeof api !== 'undefined' && api.appVersion) || '1.0.0';
+    var aboutHtml = '';
+    var versionInfo = null;
+    var aboutMarkdown = ''; // 保存原始 MD（用于分享）
+
+    apiready = function() {
+        pageMode = (api.pageParam && api.pageParam.mode) || 'about';
+        currentVersion = (api.pageParam && api.pageParam.currentVersion)
+                      || api.appVersion
+                      || '1.0.0';
+        aboutHtml = (api.pageParam && api.pageParam.aboutHtml) || '';
+        aboutMarkdown = (api.pageParam && api.pageParam.aboutMarkdown) || '';
+        versionInfo = (api.pageParam && api.pageParam.versionInfo) || null;
+
+        // 根据 mode 控制顶部按钮显示
+        var refreshBtn = document.getElementById('refreshBtn');
+        var shareBtn = document.getElementById('shareBtn');
+        if (pageMode === 'about') {
+            refreshBtn.style.display = 'flex';
+            shareBtn.style.display = 'flex';
+            document.getElementById('topBarTitle').textContent = '关于应用';
+        } else {
+            document.getElementById('topBarTitle').textContent = '发现新版本';
+        }
+
+        renderPage();
+
+        // 监听滚动：显示/隐藏返回顶部按钮
+        var scrollContainer = document.getElementById('scrollContainer');
+        var backToTopBtn = document.getElementById('backToTopBtn');
+        scrollContainer.addEventListener('scroll', function() {
+            if (scrollContainer.scrollTop > 300) {
+                backToTopBtn.classList.add('visible');
+            } else {
+                backToTopBtn.classList.remove('visible');
+            }
+        });
+
+        // 监听主框架的"刷新成功"事件
+        // 从临时 prefs key 读取新内容（_aboutRefreshBuffer / _aboutRefreshBufferMd），
+        // 原地重新渲染，不关闭页面
+        api.addEventListener({
+            name: 'aboutContentRefreshed'
+        }, function(ret, err) {
+            try {
+                var newHtml = api.getPrefs({
+                    sync: true,
+                    key: '_aboutRefreshBuffer'
+                });
+                if (newHtml) {
+                    var newMd = api.getPrefs({
+                        sync: true,
+                        key: '_aboutRefreshBufferMd'
+                    }) || '';
+                    // 重置滚动位置到顶部
+                    scrollContainer.scrollTop = 0;
+                    aboutHtml = newHtml;
+                    aboutMarkdown = newMd;
+                    renderPage();
+                    // 清空临时 buffer，避免下次进入 about 读到旧数据
+                    api.removePrefs({ key: '_aboutRefreshBuffer' });
+                    api.removePrefs({ key: '_aboutRefreshBufferMd' });
+                }
+            } catch (e) {
+                console.log('about 刷新失败: ' + e.message);
+            }
+        });
+    };
+
+    function renderPage() {
+        var container = document.getElementById('content');
+        container.innerHTML = (pageMode === 'update') ? renderUpdateMode() : renderAboutMode();
+    }
+
+    // ==============================
+    //  about 模式：完全以 MD 内容为准
+    // ==============================
+    function renderAboutMode() {
+        var bodyHtml = '';
+        var appName = '交警短信增强提醒';
+        var appDesc = '自动监听交警短信，增强警报提醒';
+        var noticeHtml = '';
+        var restHtml = '';
+
+        if (aboutHtml) {
+            var h2Match = aboutHtml.match(/<h2[^>]*>([\s\S]*?)<\/h2>/);
+            if (h2Match) appName = h2Match[1];
+
+            var afterFirstH2 = h2Match
+                ? aboutHtml.substring(aboutHtml.indexOf('</h2>') + '</h2>'.length)
+                : aboutHtml;
+            var pMatch = afterFirstH2.match(/<p>([\s\S]*?)<\/p>/);
+            if (pMatch) appDesc = pMatch[1];
+
+            var bqMatch = aboutHtml.match(/<blockquote>([\s\S]*?)<\/blockquote>/);
+            if (bqMatch) noticeHtml = bqMatch[1];
+
+            restHtml = aboutHtml;
+            if (h2Match) restHtml = restHtml.replace(h2Match[0], '');
+            if (pMatch) {
+                var firstP = restHtml.match(/<p>([\s\S]*?)<\/p>/);
+                if (firstP) restHtml = restHtml.replace(firstP[0], '');
+            }
+            if (bqMatch) {
+                var bqStart = restHtml.indexOf('<blockquote>');
+                if (bqStart > 0) {
+                    var beforeBq = restHtml.substring(0, bqStart);
+                    beforeBq = beforeBq.replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>\s*$/, '');
+                    var afterBqEnd = restHtml.indexOf('</blockquote>', bqStart) + '</blockquote>'.length;
+                    restHtml = (beforeBq + restHtml.substring(afterBqEnd));
+                } else {
+                    restHtml = restHtml.replace(bqMatch[0], '');
+                }
+            }
+            restHtml = restHtml.replace(/^(\s*<(hr|br)[^>]*>)+/, '').trim();
+
+            if (noticeHtml) {
+                bodyHtml += ''
+                    + '<div class="card notice-card">'
+                    +     '<div class="notice-title">📢 开发者通知</div>'
+                    +     '<div class="notice-text">' + noticeHtml + '</div>'
+                    + '</div>';
+            }
+
+            if (restHtml) {
+                bodyHtml += '<div class="card content-section">' + restHtml + '</div>';
+            }
+        } else {
+            bodyHtml = '<div class="status-msg">'
+                     + '<div class="icon">📡</div>'
+                     + '无法获取远程信息<br>请检查网络连接</div>';
+        }
+
+        return ''
+            + '<div class="app-header">'
+            +     '<div class="app-icon">🚨</div>'
+            +     '<div class="app-name">' + appName + '</div>'
+            +     '<div class="app-version">v' + currentVersion + '</div>'
+            +     (appDesc ? '<div class="app-desc">' + appDesc + '</div>' : '')
+            + '</div>'
+            + bodyHtml;
+    }
+
+    // ==============================
+    //  update 模式：版本信息 + 下载
+    // ==============================
+    function renderUpdateMode() {
+        var vi = versionInfo || {};
+        var latestVersion = vi.version || currentVersion;
+        var apkSize = vi.apkSize || '未知';
+        var updateDate = vi.updateDate || '';
+        var changelog = vi.changelog || '';
+        var forceUpdate = vi.forceUpdate || false;
+
+        var metaRows = ''
+            + '<div class="update-meta-row"><span class="update-meta-label">当前版本</span><span class="update-meta-value">v' + currentVersion + '</span></div>'
+            + '<div class="update-meta-row"><span class="update-meta-label">最新版本</span><span class="update-meta-value highlight">v' + latestVersion + '</span></div>'
+            + '<div class="update-meta-row"><span class="update-meta-label">安装包大小</span><span class="update-meta-value">' + apkSize + '</span></div>';
+        if (updateDate) {
+            metaRows += '<div class="update-meta-row"><span class="update-meta-label">更新日期</span><span class="update-meta-value">' + updateDate + '</span></div>';
+        }
+
+        var body = '<div class="card">'
+                 +     '<div class="update-meta">' + metaRows + '</div>'
+                 + '</div>';
+
+        if (changelog) {
+            body += '<div class="section-title">更新内容</div>'
+                 + '<div class="card content-section">' + changelogToHtml(changelog) + '</div>';
+        }
+
+        // 显示底部操作栏
+        setTimeout(function() {
+            var bar = document.getElementById('bottomActionBar');
+            var cancelBtn = document.getElementById('cancelBtn');
+            var progressWrapDiv = document.getElementById('progressWrapDiv');
+            bar.classList.remove('hidden');
+            progressWrapDiv.style.display = 'block';
+            progressWrapDiv.style.padding = '0 16px';
+            progressWrapDiv.style.paddingBottom = 'calc(max(10px, env(safe-area-inset-bottom)) + 60px)';
+            if (forceUpdate) cancelBtn.style.display = 'none';
+        }, 0);
+
+        return body;
+    }
+
+    function changelogToHtml(changelog) {
+        if (!changelog) return '';
+        var lines = changelog.split(/\n/);
+        var items = [];
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (line) {
+                line = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                items.push('<li>' + line + '</li>');
+            }
+        }
+        return items.length > 0 ? '<ul>' + items.join('') + '</ul>' : '';
+    }
+
+    // ── 顶部按钮动作 ──
+
+    // 刷新 about 内容（强制重新拉取 OSS）
+    // 通知主框架重新拉取，成功后发回 aboutContentRefreshed 信号
+    // （避免 execScript 注入长 HTML 字符串触发 SyntaxError）
+    function refreshAboutContent() {
+        var btn = document.getElementById('refreshBtn');
+        btn.classList.add('spinning');
+        api.sendEvent({
+            name: 'triggerRefreshAbout'
+        });
+        // 2 秒后转回（不论成功失败）
+        setTimeout(function() {
+            btn.classList.remove('spinning');
+        }, 2000);
+    }
+
+    // 分享 about 内容（分享纯文本给朋友）
+    function shareAboutContent() {
+        // 优先用原始 MD；若无则从渲染后的 HTML 反推
+        var shareText = aboutMarkdown || aboutHtml.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim();
+        if (!shareText) {
+            api.toast({ msg: '没有可分享的内容', duration: 2000, location: 'middle' });
+            return;
+        }
+        // APICloud 的分享模块
+        try {
+            var shareModule = api.require('shareAction');
+            if (shareModule) {
+                shareModule.share({
+                    text: shareText,
+                    title: '交警短信增强提醒 - 关于应用'
+                });
+            } else {
+                // 兜底：复制到剪贴板
+                copyToClipboard(shareText);
+            }
+        } catch (e) {
+            copyToClipboard(shareText);
+        }
+    }
+
+    function copyToClipboard(text) {
+        try {
+            var clip = api.require('clipBoard');
+            if (clip) {
+                clip.set({
+                    value: text
+                }, function(ret, err) {
+                    api.toast({ msg: '内容已复制到剪贴板', duration: 2000, location: 'bottom' });
+                });
+            } else {
+                api.toast({ msg: '内容长度: ' + text.length + ' 字符', duration: 2000, location: 'bottom' });
+            }
+        } catch (e) {
+            api.toast({ msg: '分享失败', duration: 2000, location: 'middle' });
+        }
+    }
+
+    // 返回顶部
+    function scrollToTop() {
+        var scrollContainer = document.getElementById('scrollContainer');
+        scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // 接收主框架推送的新内容并重新渲染（用于"刷新"按钮）
+    // 由 main_frame 通过 api.execScript 调用
+    function reloadAbout(newHtml, newMarkdown) {
+        aboutHtml = newHtml || '';
+        aboutMarkdown = newMarkdown || '';
+        // 滚动到顶部
+        document.getElementById('scrollContainer').scrollTop = 0;
+        // 重新渲染
+        renderPage();
+    }
+
+    // ── 更新流程（update 模式）──
+
+    function startDownload() {
+        var downloadUrl = versionInfo && versionInfo.downloadUrl;
+        if (!downloadUrl) {
+            api.toast({ msg: '下载地址无效', duration: 2000, location: 'middle' });
+            return;
+        }
+
+        var btn = document.getElementById('downloadBtn');
+        var progressWrap = document.getElementById('progressWrap');
+        var progressBar = document.getElementById('progressBar');
+
+        btn.disabled = true;
+        btn.textContent = '准备下载…';
+        progressWrap.classList.add('active');
+
+        api.download({
+            url: downloadUrl,
+            savePath: 'fs://HelloApp/HelloApp-update.apk',
+            report: true,
+            cache: true
+        }, function(ret, err) {
+            if (!ret) {
+                btn.disabled = false;
+                btn.textContent = '重新下载';
+                api.toast({ msg: '下载失败，请重试', duration: 2000, location: 'middle' });
+                return;
+            }
+
+            if (ret.state === 0) {
+                var percent = ret.percent || 0;
+                btn.textContent = '下载中… ' + percent + '%';
+                progressBar.style.width = percent + '%';
+            } else if (ret.state === 1) {
+                btn.textContent = '安装中…';
+                progressBar.style.width = '100%';
+                installAPK(ret.savePath);
+            } else {
+                btn.disabled = false;
+                btn.textContent = '重新下载';
+                api.toast({ msg: '下载失败，请检查网络后重试', duration: 2000, location: 'middle' });
+            }
+        });
+    }
+
+    function installAPK(apkPath) {
+        try {
+            if (api.installApp) {
+                api.installApp({ appPath: apkPath });
+            } else if (api.openApp) {
+                api.openApp({
+                    mimeType: 'application/vnd.android.package-archive',
+                    uri: apkPath
+                });
+            } else {
+                api.toast({ msg: '安装失败，请手动安装：' + apkPath, duration: 3000, location: 'middle' });
+            }
+        } catch (e) {
+            api.toast({ msg: '安装异常：' + e.message, duration: 3000, location: 'middle' });
+        }
+    }
+
+    function closePage() {
+        if (window.api && api.closeFrame) api.closeFrame();
+    }
+
+    function goBack() {
+        closePage();
+    }
+
+    function checkUpdate() {
+        // 兼容旧版入口（保留以防主框架调用）
+        api.sendEvent({ name: 'triggerCheckUpdate' });
+        closePage();
+    }
+</script>
+</body>
+</html>
