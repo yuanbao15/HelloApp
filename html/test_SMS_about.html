@@ -707,9 +707,11 @@
 
         api.download({
             url: downloadUrl,
-            savePath: 'fs://HelloApp/HelloApp-update.apk',
+            // 把 APK 下载到系统下载目录，避免 Android 11+ Scoped Storage 限制
+            // 导致系统安装器无法读取 APP 私有目录的 APK
+            savePath: '/sdcard/Download/HelloApp-update.apk',
             report: true,
-            cache: true
+            cache: false
         }, function(ret, err) {
             if (!ret) {
                 btn.disabled = false;
@@ -735,19 +737,57 @@
     }
 
     function installAPK(apkPath) {
-        try {
-            if (api.installApp) {
-                api.installApp({ appPath: apkPath });
-            } else if (api.openApp) {
-                api.openApp({
-                    mimeType: 'application/vnd.android.package-archive',
-                    uri: apkPath
-                });
-            } else {
-                api.toast({ msg: '安装失败，请手动安装：' + apkPath, duration: 3000, location: 'middle' });
+        // api.installApp 是 APICloud 内置 API
+        // 官方示例：api.installApp({ appUri: 'file://xxx.apk' });
+        // 注意：
+        //   1) 参数名是 appUri（不是 appPath）
+        //   2) 路径必须 file:// 前缀，fs:// 沙盒路径不被识别
+        //   3) Android 11+ Scoped Storage 限制下，APP 私有目录 APK 系统安装器访问不到，
+        //      所以 APK 必须下载到非沙盒目录（如 /sdcard/Download/）
+        if (!api.installApp) {
+            api.alert({
+                title: '不支持自动安装',
+                msg: '当前平台不支持 api.installApp。\n\n文件位置：' + apkPath + '\n\n请用文件管理器打开该 APK 手动安装。',
+                buttons: ['确定']
+            });
+            return;
+        }
+        // 路径统一转 file:// 前缀
+        var fileUri = apkPath;
+        if (apkPath.indexOf('file://') !== 0) {
+            // 剥掉 fs://（如果有）再加 file://
+            var raw = apkPath;
+            if (raw.indexOf('fs://') === 0) {
+                raw = raw.substring('fs://'.length);
             }
+            fileUri = 'file://' + raw;
+        }
+        console.log('[install] installApp appUri=' + fileUri);
+        api.toast({
+            msg: '正在启动系统安装器…',
+            duration: 1500,
+            location: 'middle'
+        });
+        try {
+            api.installApp({
+                appUri: fileUri
+            });
+            // 没有回调：调用成功后系统会弹出安装器，用户在安装器里操作
+            // 3 秒后给用户一个明确反馈（让他知道是去系统安装器确认）
+            setTimeout(function() {
+                api.toast({
+                    msg: '请在弹出的系统安装器中点击"安装"',
+                    duration: 3000,
+                    location: 'middle'
+                });
+            }, 1500);
         } catch (e) {
-            api.toast({ msg: '安装异常：' + e.message, duration: 3000, location: 'middle' });
+            console.log('[install] installApp threw: ' + e.message);
+            api.alert({
+                title: '启动安装器失败',
+                msg: '无法启动系统安装器：' + e.message + '\n\n文件位置：' + apkPath + '\n\n请用文件管理器打开该 APK 手动安装。',
+                buttons: ['确定']
+            });
         }
     }
 

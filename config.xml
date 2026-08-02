@@ -32,6 +32,11 @@
 	<permission name="internet" />
 	<permission name="bootCompleted" />
 	<permission name="hardware" />
+	<!-- Android 8.0+ 安装未知来源应用的权限（用于 app 自升级场景） -->
+	<permission name="requestInstallPackages" />
+	<!-- 读写外部存储（Android 10 以下需要，scoped storage 也建议声明） -->
+	<permission name="readExternalStorage" />
+	<permission name="writeExternalStorage" />
 
     <meta-data name="OFFLINE_APP_KEY" value="ynznjbcb2qzfcxabyrs7w5hj3cpmy5owxyuxb5aw"/>
     <meta-data name="OFFLINE_APP_SECRET" value="3cab1b99c13f84a692f63c50d16197e8"/>
