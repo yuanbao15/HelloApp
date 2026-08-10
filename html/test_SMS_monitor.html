@@ -613,6 +613,56 @@
         .number-input-disabled { color: var(--color-text-tertiary); }
         .number-input-enabled { color: var(--color-text); }
 
+        /* ========== 通知设置 - 震动时长下拉 ========== */
+        /* 字体大小与 input 统一为 14px */
+        .vibrate-select {
+            flex: 1;
+            min-width: 0;
+            max-width: 180px;
+            padding: 6px 10px;
+            border: 1px solid var(--color-divider);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            line-height: 1.4;
+            color: var(--color-text);
+            background: #fafafa;
+            -webkit-appearance: none;
+            appearance: none;
+            cursor: pointer;
+            transition: all .2s;
+        }
+        .vibrate-select:focus {
+            background: white;
+            border-color: var(--color-primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0,122,255,.1);
+        }
+        /* 下拉箭头：使用 ::after 配合包装容器实现（更可控） */
+        .vibrate-select-wrap {
+            position: relative;
+            flex: 1;
+            min-width: 0;
+            max-width: 180px;
+            display: flex;
+        }
+        .vibrate-select-wrap::after {
+            content: '';
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            width: 8px;
+            height: 8px;
+            border-right: 2px solid var(--color-text-secondary);
+            border-bottom: 2px solid var(--color-text-secondary);
+            transform: translateY(-70%) rotate(45deg);
+            pointer-events: none;
+        }
+        /* select 右侧留出箭头空间 */
+        .vibrate-select-wrap .vibrate-select {
+            max-width: 100%;
+            padding-right: 26px;
+        }
+
     </style>
 </head>
 <body>
@@ -687,6 +737,27 @@
                 <button class="btn btn-small btn-ghost btn-test-sound" id="testSoundBtn" onclick="testSound()">🔊 试听音效</button>
             </div>
         </div>
+
+        <div class="card">
+            <div class="card-title">通知设置</div>
+            <div class="switch-box">
+                <span class="nowrap-label">震动提醒</span>
+                <input type="checkbox" id="vibrateEnabled" class="switch">
+            </div>
+            <div class="switch-box" id="vibrateDurationRow" style="flex-direction:column; align-items:stretch; gap:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                    <span class="nowrap-label">震动时长</span>
+                    <div class="vibrate-select-wrap">
+                        <select id="vibrateDuration" class="vibrate-select">
+                            <option value="0">默认短震</option>
+                            <option value="10">10秒</option>
+                            <option value="30">30秒</option>
+                            <option value="60">60秒</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="status" id="statusText">当前状态: 未监听</div>
@@ -722,6 +793,8 @@
     var isTestPlaying = false; // 是否正在试听音效
     var enableNumberMatch = false; // 是否启用号码匹配
     var isDialogShowing = false; // 是否正在显示对话框
+    var vibrateEnabled = true; // 是否启用震动（通知推送时）
+    var vibrateDuration = 0; // 震动持续秒数：0=默认短震，10/30/60=对应循环时长
     
     // 统计相关变量
     var alertRecords = []; // 警报记录数组
@@ -950,9 +1023,12 @@
 
         // 初始化音量控制
         initVolumeControl();
-        
+
         // 初始化音效控制
         initSoundControl();
+
+        // 初始化通知设置（震动开关 + 震动时长）
+        initNotificationControl();
     }
 
     // 更新关键词UI
@@ -1016,7 +1092,7 @@
             // 使用正确的smsListener模块，用于监听短信
             smsListenerModule = api.require('smsListener');
             moduleProcessAlive = api.require('moduleProcessAlive_2024'); // YB-自己的进程守护模块，用于保活
-            moduleNotification = api.require('moduleNotification_2022'); // YB-自己的通知模块
+            moduleNotification = api.require('moduleNotification_2026'); // YB-自己的通知模块（升级版：支持震动开关+时长）
             addLog('短信监听模块初始化成功，另有进程守护模块和通知模块', 'success');
         } catch (e) {
             addLog('短信监听模块初始化失败: ' + e.message, 'error');
@@ -1297,7 +1373,7 @@
         if (checkContentMatch(sms.content)) {
             addLog('短信内容匹配关键词，触发提醒', 'success');
             // 推送通知到通知栏
-            showNotification('【紧急】交警短信', sms.content);
+            showNotification('【紧急】接收到短信提醒', sms.content);
 
             // 记录警报事件
             recordAlert(sms);
@@ -1424,7 +1500,7 @@
         
         isDialogShowing = true;
         api.alert({
-            title: '交警短信提醒',
+            title: '【紧急】接收到短信提醒',
             msg: '短信内容：' + smsContent,
             buttons: ['我知道了']
         }, function(ret) {
@@ -1522,6 +1598,8 @@
             var defaultSound = 'short_ring.mp3';
             var defaultEnableNumberMatch = false;
             var defaultVolumePercent = 50; // 与 HTML input value="50" 一致
+            var defaultVibrateEnabled = true;
+            var defaultVibrateDuration = 0;
 
             // 1) 如果在监听，先停止
             if (isListening) {
@@ -1537,6 +1615,8 @@
             matchLogic = defaultMatchLogic;
             selectedSound = defaultSound;
             enableNumberMatch = defaultEnableNumberMatch;
+            vibrateEnabled = defaultVibrateEnabled;
+            vibrateDuration = defaultVibrateDuration;
 
             // 3) 重置 UI
             var smsSwitch = document.getElementById('smsSwitch');
@@ -1578,6 +1658,13 @@
                 if (soundShort) soundShort.checked = false;
                 if (soundPolice) soundPolice.checked = true;
             }
+            // 震动开关 + 震动时长
+            var vibrateSwitchEl = document.getElementById('vibrateEnabled');
+            if (vibrateSwitchEl) vibrateSwitchEl.checked = defaultVibrateEnabled;
+            var vibrateDurationSelect = document.getElementById('vibrateDuration');
+            if (vibrateDurationSelect) vibrateDurationSelect.value = String(defaultVibrateDuration);
+            var vibrateDurationRow = document.getElementById('vibrateDurationRow');
+            if (vibrateDurationRow) vibrateDurationRow.classList.remove('section-disabled');
 
             // 4) 禁用相关区域（开关关闭后）
             if (typeof disableSections === 'function') {
@@ -1903,18 +1990,21 @@
     }
     // 显示通知
     function showNotification(title, content){
-			var params = {
-				title : title,
-				content : content
-			};
-			moduleNotification.showNotification(params, function(ret, err){
-                if (ret) {
-                    addLog('显示通知成功: ' + JSON.stringify(ret), 'success');
-                } else {
-                    addLog('显示通知失败: ' + JSON.stringify(err), 'error');
-                }
-            });
-		}
+        var params = {
+            title : title,
+            content : content,
+            // moduleNotification_2026 升级参数：震动开关 + 震动时长
+            vibrateEnabled: vibrateEnabled,
+            vibrateDuration: vibrateDuration
+        };
+        moduleNotification.showNotification(params, function(ret, err){
+            if (ret) {
+                addLog('显示通知成功: ' + JSON.stringify(ret), 'success');
+            } else {
+                addLog('显示通知失败: ' + JSON.stringify(err), 'error');
+            }
+        });
+    }
 
     // 初始化音效控制
     function initSoundControl() {
@@ -1952,6 +2042,72 @@
 
     // 试听音效
     var TEST_BTN_DEFAULT_TEXT = '🔊 试听音效';  // 按钮初始文字（停止/完成后还原为此）
+
+    // 初始化通知设置（震动开关 + 震动时长）
+    // 依赖 moduleNotification_2026 的 vibrateEnabled / vibrateDuration 参数
+    function initNotificationControl() {
+        var vibrateSwitch = document.getElementById('vibrateEnabled');
+        var durationRow = document.getElementById('vibrateDurationRow');
+        var durationSelect = document.getElementById('vibrateDuration');
+
+        // 加载震动开关
+        var savedVibrateEnabled = api.getPrefs({sync: true, key: 'vibrateEnabled'});
+        if (savedVibrateEnabled === 'false') {
+            vibrateEnabled = false;
+            vibrateSwitch.checked = false;
+        } else {
+            vibrateEnabled = true;
+            vibrateSwitch.checked = true;
+        }
+
+        // 加载震动时长（必须是 0/10/30/60 之一，默认 0）
+        var savedVibrateDuration = api.getPrefs({sync: true, key: 'vibrateDuration'});
+        var validDurations = ['0', '10', '30', '60'];
+        if (savedVibrateDuration && validDurations.indexOf(savedVibrateDuration) !== -1) {
+            vibrateDuration = parseInt(savedVibrateDuration, 10);
+        } else {
+            vibrateDuration = 0;
+        }
+        // 同步 select 选中状态
+        if (durationSelect) {
+            durationSelect.value = String(vibrateDuration);
+        }
+
+        // 工具：禁用/启用"震动时长"行（震动关闭时灰显）
+        function updateDurationRowState() {
+            if (vibrateEnabled) {
+                durationRow.classList.remove('section-disabled');
+            } else {
+                durationRow.classList.add('section-disabled');
+            }
+        }
+        updateDurationRowState();
+
+        // 监听震动开关变化
+        vibrateSwitch.addEventListener('change', function(e) {
+            vibrateEnabled = e.target.checked;
+            api.setPrefs({
+                key: 'vibrateEnabled',
+                value: vibrateEnabled.toString()
+            });
+            updateDurationRowState();
+            addLog('震动提醒已' + (vibrateEnabled ? '启用' : '禁用'), 'success');
+        });
+
+        // 监听震动时长变化（select change）
+        if (durationSelect) {
+            durationSelect.addEventListener('change', function(e) {
+                vibrateDuration = parseInt(e.target.value, 10);
+                api.setPrefs({
+                    key: 'vibrateDuration',
+                    value: String(vibrateDuration)
+                });
+                addLog('震动时长已设置为: ' + (vibrateDuration === 0 ? '默认短震' : (vibrateDuration + '秒')), 'success');
+            });
+        }
+    }
+
+
     function testSound() {
         var testBtn = document.getElementById('testSoundBtn');
 
