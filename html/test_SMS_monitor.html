@@ -736,17 +736,14 @@
                 </div>
                 <button class="btn btn-small btn-ghost btn-test-sound" id="testSoundBtn" onclick="testSound()">🔊 试听音效</button>
             </div>
-        </div>
-
-        <div class="card">
-            <div class="card-title">通知设置</div>
-            <div class="switch-box">
-                <span class="nowrap-label">震动提醒</span>
-                <input type="checkbox" id="vibrateEnabled" class="switch">
-            </div>
-            <div class="switch-box" id="vibrateDurationRow" style="flex-direction:column; align-items:stretch; gap:6px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
-                    <span class="nowrap-label">震动时长</span>
+            <!-- 震动设置：合并到本卡片，标签样式与警报音量一致（.volume-item .label） -->
+            <div class="volume-control" style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--color-divider);">
+                <div class="volume-item">
+                    <span class="label">震动提醒</span>
+                    <input type="checkbox" id="vibrateEnabled" class="switch">
+                </div>
+                <div class="volume-item" id="vibrateDurationRow">
+                    <span class="label">震动时长</span>
                     <div class="vibrate-select-wrap">
                         <select id="vibrateDuration" class="vibrate-select">
                             <option value="0">默认短震</option>
@@ -2085,6 +2082,15 @@
 
         // 监听震动开关变化
         vibrateSwitch.addEventListener('change', function(e) {
+            // 同步震动反馈：与"总开关"一致，开/关各给一次短震
+            // （change 事件是用户手势同步上下文，可调用 vibrate）
+            try {
+                if (navigator.vibrate &&
+                    (!navigator.userActivation || navigator.userActivation.isActive)) {
+                    navigator.vibrate(e.target.checked ? [20, 30, 30] : 15);
+                }
+            } catch (_) { /* 静默 */ }
+
             vibrateEnabled = e.target.checked;
             api.setPrefs({
                 key: 'vibrateEnabled',
