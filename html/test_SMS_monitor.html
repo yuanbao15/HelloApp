@@ -822,7 +822,13 @@
     var acc5Util = null; // 引入acc5Util模块-控制音量
     var moduleProcessAlive = null; // YB-自己的进程守护模块，用于保活
     var moduleNotification = null; // YB-自己的通知模块
+    var audioStreamer = null; // 原生音频流播放器（后台/锁屏循环警报用，防 WebView 30s 掐断）
+    var audioLoopEnabled = false; // audioStreamer 当前循环模式（true=循环；false=单次）
     var isListening = false; // 是否开启监听
+    var __jsReplayCount = 0; // JS 兜底重播累计次数（防止某台设备原生 setLoop 完全失效时无限循环）
+    var JS_REPLAY_MAX = 30; // JS 兜底单次报警最多重播次数（实测 short_ring.mp3 单曲 3s，30 次约 90s，足够真机定位问题）
+    var __lastAudioStateTime = 0; // 最近一次音频状态回调的时间戳（用于 resume 自愈防护）
+
     var targetNumber = '12123'; // 监听短信的目标号码
     var keywords = ['湖北交警', '鄂AY366Q']; // 初始化默认关键词
     var matchLogic = 'or'; // 逻辑：'or' 或 'and'
@@ -865,6 +871,9 @@
 
         // 初始化acc5Util模块
         initAcc5Util();
+
+        // 初始化 audioStreamer 原生音频流播放器（用于后台/锁屏循环警报）
+        initAudioStreamer();
         
         // 加载警报记录
         loadAlertRecords();
@@ -873,21 +882,18 @@
         api.addEventListener({
             name: 'pause'
         }, function(ret, err) {
+            // 重要：正式警报**不停止**——锁屏/退后台正是要持续播放的场景
+            // 原生 audioStreamer 会在后台继续循环，依赖前台服务 + backgroundMode=audio
             if (isPlaying) {
-                api.stopPlay();
-                isPlaying = false;
-                updateStatusDisplay();
-                addLog('页面暂停，停止警报铃声', 'warning');
-
-                // 恢复原始音量
-                restoreOriginalVolume();
+                addLog('页面进入后台（pause），原生警报继续循环播放', 'info');
             }
 
-            // 重置试听状态
+            // 重置试听状态（试听是用户主动行为，没必要后台跑）
             if (isTestPlaying) {
-                api.stopPlay();
+                stopTestPlay();
                 isTestPlaying = false;
-                document.getElementById('testSoundBtn').textContent = '🔊 试听音效';
+                var pauseTestBtn = document.getElementById('testSoundBtn');
+                if (pauseTestBtn) pauseTestBtn.textContent = TEST_BTN_DEFAULT_TEXT;
                 addLog('页面暂停，停止音效试听', 'warning');
 
                 // 恢复原始音量
@@ -903,6 +909,7 @@
         // 监听 APP 从后台切回前台（如解锁屏幕）
         // 解决 MIUI 深度休眠后 BroadcastReceiver 失效、锁屏期间收到的短信
         // 在解锁后才能被监听到的问题
+        // v2 变更：resume 时如果 isPlaying 为 true，尝试重启警报音频（系统可能已回收 audioStreamer 实例）
         api.addEventListener({
             name: 'resume'
         }, function(ret, err) {
@@ -911,16 +918,58 @@
             if (isListening && smsListenerModule) {
                 doRegisterSMSListener('resume');
             }
+            // 警报音频自愈（v2 核心修复 + v3 防护）：
+            // 场景：锁屏/后台期间系统可能回收 audioStreamer 实例，回到前台已无声
+            // 解决：如果 isPlaying 为 true，重新启动警报播放
+            // v3 防护：如果 30 秒内有过音频状态回调，说明原生循环还在正常跑，跳过重启避免打断
+            if (isPlaying && audioStreamer) {
+                var now = Date.now();
+                var sinceLastState = __lastAudioStateTime > 0 ? (now - __lastAudioStateTime) : Infinity;
+                var sinceLastSec = Math.round(sinceLastState / 1000);
+                if (sinceLastState < 30000) {
+                    addLog('[resume 自愈] 跳过：' + sinceLastSec + '秒前有音频回调，原生循环正常', 'info');
+                } else {
+                    addLog('[resume 自愈] 检测到 ' + sinceLastSec + '秒无音频回调，可能已被系统回收，尝试重启音频', 'warning');
+                    var resumePath = 'widget://res/' + selectedSound;
+                    startAlarmLoop(resumePath, function(resumeSuccess, resumeErr) {
+                        if (resumeSuccess) {
+                            addLog('[resume 自愈] 音频已重启: ' + resumePath, 'success');
+                        } else {
+                            addLog('[resume 自愈] 重启失败: ' + JSON.stringify(resumeErr || {}), 'error');
+                        }
+                    });
+                }
+            }
         });
 
         // appactive 是 APICloud 的另一组前台事件，与 resume 互补，
         // 部分 MIUI 设备在某些情况下只触发 appactive 不触发 resume
+        // v2 变更：同样加音频自愈
         api.addEventListener({
             name: 'appactive'
         }, function(ret, err) {
             addLog('APP 进入活跃状态（appactive），检查短信监听状态', 'info');
             if (isListening && smsListenerModule) {
                 doRegisterSMSListener('appactive');
+            }
+            // 警报音频自愈（与 resume 一致，带 30 秒防护）
+            if (isPlaying && audioStreamer) {
+                var now = Date.now();
+                var sinceLastState = __lastAudioStateTime > 0 ? (now - __lastAudioStateTime) : Infinity;
+                var sinceLastSec = Math.round(sinceLastState / 1000);
+                if (sinceLastState < 30000) {
+                    addLog('[appactive 自愈] 跳过：' + sinceLastSec + '秒前有音频回调，原生循环正常', 'info');
+                } else {
+                    addLog('[appactive 自愈] 检测到 ' + sinceLastSec + '秒无音频回调，可能已被系统回收，尝试重启音频', 'warning');
+                    var activePath = 'widget://res/' + selectedSound;
+                    startAlarmLoop(activePath, function(activeSuccess, activeErr) {
+                        if (activeSuccess) {
+                            addLog('[appactive 自愈] 音频已重启: ' + activePath, 'success');
+                        } else {
+                            addLog('[appactive 自愈] 重启失败: ' + JSON.stringify(activeErr || {}), 'error');
+                        }
+                    });
+                }
             }
         });
     };
@@ -1147,16 +1196,257 @@
             // 使用正确的acc5Util模块，用于控制音量
             acc5Util = api.require('acc5Util');
             addLog('acc5Util模块初始化成功', 'success');
-            
+
             // 模块初始化成功后立即获取系统音量
             setTimeout(function() {
                 refreshCurrentVolume();
             }, 200); // 延迟200ms确保模块完全初始化
-            
+
         } catch (e) {
             addLog('acc5Util模块初始化失败: ' + e.message, 'error');
             showError('acc5Util模块不可用，请检查APICloud配置');
         }
+    }
+
+    // ========== audioStreamer 原生音频流播放器 ==========
+    // 用途：替换原 api.startPlay 的 JS 端循环，避免锁屏/后台时被 WebView 30 秒掐断
+    // author: yuanbao, date: 2026-08-11（v2: 2026-08-11 调整 setLoop 顺序 + 加 JS 兜底重播 + resume 自愈）
+    // 关键调用顺序（v2 修复）：
+    //   1. 先 openPlayer 打开播放器（Android 上会自动播放，无需再调 resume）
+    //   2. 在 openPlayer 的 success 回调里再 setLoop(true/false)，保证 setLoop 作用在已打开的实例上
+    //   3. JS 层兜底重播：状态监听器里如果 finished + audioLoopEnabled + isPlaying，重新 openPlayer
+    //   4. resume 事件里如果 isPlaying 为 true，尝试重启音频（系统可能已回收 audioStreamer 实例）
+    // API 参考（用友 YonBuilder audioStreamer 官方文档 https://developer.yonyou.com/docs/Client-API/Open-SDK/audioStreamer）：
+    //   openPlayer({path}, cb) -> 打开播放器并自动播放
+    //   setLoop({loop:bool})   -> 设置循环模式（**v2: 在 openPlayer 回调内调用**）
+    //   stop()                 -> 停止
+    //   addEventListener({}, cb(ret)) -> 状态变化（prepare/buffering/resume/pause/finished）
+    //   关键注意：Android 上不能调 resume()！openPlayer 会自动播放；resume 只在 iOS 上用于恢复暂停
+
+    // 音频状态名 -> 中文描述（用于日志追溯）
+    function describeAudioState(state) {
+        var map = {
+            prepare:   '准备完成',
+            buffering: '正在缓冲',
+            resume:    '恢复播放',
+            pause:     '已暂停',
+            finished:  '播放完成',
+            error:     '出错'
+        };
+        return map[state] || ('未知状态: ' + state);
+    }
+
+    // 初始化 audioStreamer 模块 + 注册状态监听器
+    function initAudioStreamer() {
+        try {
+            audioStreamer = api.require('audioStreamer');
+            if (!audioStreamer || typeof audioStreamer.openPlayer !== 'function') {
+                audioStreamer = null;
+                addLog('audioStreamer 模块不可用，请确认已加入自定义 Loader / 安装包', 'error');
+                return false;
+            }
+            addLog('audioStreamer 模块初始化成功', 'success');
+            // 注册状态监听器（关键！用于日志追溯播放状态变化）
+            registerAudioStateListener();
+            return true;
+        } catch (e) {
+            audioStreamer = null;
+            addLog('audioStreamer 模块初始化异常: ' + e.message, 'error');
+            return false;
+        }
+    }
+
+    // 注册音频播放器状态监听器（只需一次）
+    // v2 变更：
+    //   - 所有状态都打印详细上下文（循环模式/播放状态/试听状态）
+    //   - finished + audioLoopEnabled + isPlaying 时主动重新 openPlayer（JS 兜底重播）
+    function registerAudioStateListener() {
+        if (!audioStreamer || typeof audioStreamer.addEventListener !== 'function') return;
+        try {
+            audioStreamer.addEventListener({}, function(ret) {
+                if (!ret || !ret.state) return;
+
+                // 记录最近一次状态回调时间（resume 自愈防护用：判断音频是否还在循环）
+                __lastAudioStateTime = Date.now();
+
+                var state = ret.state;
+                var cn = describeAudioState(state);
+                var level = (state === 'error') ? 'error' : 'info';
+
+                // 打印完整上下文：状态/循环模式/播放状态/试听状态
+                // 关键！这样日志就能看出来"原 setLoop 是否生效"和"JS 兜底是否触发"
+                var ctx = ' [audioLoop=' + audioLoopEnabled +
+                          ', isPlaying=' + isPlaying +
+                          ', isTestPlaying=' + isTestPlaying + ']';
+                addLog('音频状态: ' + cn + ctx, level);
+
+                // ★★★ JS 兜底重播（v2 核心修复，带 30 次上限）★★★
+                // 触发条件：finished + 循环模式已开启 + 用户仍在播放状态
+                // 原理：原 audioStreamer.setLoop(true) 在部分 Android 设备上不生效，
+                //       播完一次就停。这里由 finished 事件驱动重新 openPlayer，保证不中断。
+                // 注意：必须跳过试听（!audioLoopEnabled），否则试听也会被反复重播。
+                if (state === 'finished' && audioLoopEnabled && isPlaying) {
+                    // 上限防护：累计达到 JS_REPLAY_MAX 次后强制停止，避免某台设备真的无限循环
+                    if (__jsReplayCount >= JS_REPLAY_MAX) {
+                        addLog('[JS 兜底重播] 已达上限 ' + JS_REPLAY_MAX + ' 次（累计 ' + __jsReplayCount + '），怀疑原生 setLoop 完全失效，强制停止', 'error');
+                        isPlaying = false;
+                        updateStatusDisplay();
+                        restoreOriginalVolume();
+                        return;
+                    }
+                    __jsReplayCount++;
+                    addLog('[JS 兜底重播] 第 ' + __jsReplayCount + '/' + JS_REPLAY_MAX + ' 次：原 setLoop 未生效，finished 后重新打开播放器', 'warning');
+                    var replayPath = 'widget://res/' + selectedSound;
+                    try {
+                        // 不再次调用 setAudioLoop，避免覆盖 audioLoopEnabled 变量
+                        // 直接重新 openPlayer（参照 setLoop 在回调内的调用顺序）
+                        audioStreamer.openPlayer({ path: replayPath }, function(replayRet) {
+                            addLog('[JS 兜底 openPlayer 回调] ret=' + JSON.stringify(replayRet || {}), 'info');
+                            if (replayRet && replayRet.status) {
+                                addLog('[JS 兜底重播] 成功: ' + replayPath, 'success');
+                            } else {
+                                addLog('[JS 兜底重播] 失败: ' + JSON.stringify(replayRet || {}), 'error');
+                            }
+                        });
+                    } catch (replayErr) {
+                        addLog('[JS 兜底重播] 异常: ' + replayErr.message, 'error');
+                    }
+                    return; // 重要：直接 return，避免触发下面的"试听完成"逻辑
+                }
+
+                // 试听单次播放自然完成时：自动恢复按钮和音量
+                if (state === 'finished' && !audioLoopEnabled && isTestPlaying) {
+                    isTestPlaying = false;
+                    var testBtn = document.getElementById('testSoundBtn');
+                    if (testBtn) testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
+                    addLog('试听自然播放完成', 'success');
+                    restoreOriginalVolume();
+                }
+                // 播放器出错时：强制清理 UI 和音量
+                if (state === 'error') {
+                    if (isPlaying) {
+                        isPlaying = false;
+                        updateStatusDisplay();
+                        restoreOriginalVolume();
+                    }
+                    if (isTestPlaying) {
+                        isTestPlaying = false;
+                        var btn = document.getElementById('testSoundBtn');
+                        if (btn) btn.textContent = TEST_BTN_DEFAULT_TEXT;
+                        restoreOriginalVolume();
+                    }
+                }
+            });
+            addLog('audioStreamer 状态监听器已注册（v2: 含 JS 兜底重播）', 'success');
+        } catch (e) {
+            addLog('注册状态监听器异常: ' + e.message, 'error');
+        }
+    }
+
+    // 设置 audioStreamer 循环模式
+    // v2 变更：必须在 openPlayer 回调里调用（保证 setLoop 作用在已打开的实例上）
+    //      返回 boolean，方便调用方决定是否需要 JS 兜底
+    function setAudioLoop(loopEnabled) {
+        if (!audioStreamer || typeof audioStreamer.setLoop !== 'function') {
+            addLog('setLoop 跳过：audioStreamer 未初始化或不支持 setLoop', 'warning');
+            return false;
+        }
+        try {
+            addLog('[setLoop] 调用 audioStreamer.setLoop({loop: ' + !!loopEnabled + '})', 'info');
+            audioStreamer.setLoop({ loop: !!loopEnabled });
+            audioLoopEnabled = !!loopEnabled;
+            addLog('[setLoop] 设置完成: audioLoopEnabled=' + audioLoopEnabled, 'info');
+            return true;
+        } catch (e) {
+            addLog('[setLoop] 异常: ' + e.message, 'error');
+            return false;
+        }
+    }
+
+    // 启动循环警报（v2 顺序：先 openPlayer，回调成功后再 setLoop(true)）
+    // 注意：Android 上不能调 resume()，否则会报 TypeError: audioStreamer.resume is not a function
+    function startAlarmLoop(audioPath, callback) {
+        if (!audioStreamer) {
+            var err = { msg: 'audioStreamer 模块未初始化或未编译进安装包' };
+            addLog(err.msg, 'error');
+            if (typeof callback === 'function') callback(false, err);
+            return;
+        }
+        try {
+            addLog('[startAlarmLoop] 准备打开播放器，path=' + audioPath, 'info');
+            // v2 顺序调整：先 openPlayer，回调成功后再 setLoop(true)
+            // 原因：setLoop 必须作用在已打开的播放器实例上，否则可能打空
+            audioStreamer.openPlayer({ path: audioPath }, function(ret) {
+                addLog('[openPlayer 回调] ret=' + JSON.stringify(ret || {}), 'info');
+                var openOk = !!(ret && ret.status);
+                if (!openOk) {
+                    addLog('openPlayer 失败: ' + JSON.stringify(ret || {}), 'error');
+                    if (typeof callback === 'function') callback(false, ret);
+                    return;
+                }
+                // openPlayer 在 Android 上会自动播放，无需再调 resume()
+                // 然后立即设置循环模式（必须在已打开的实例上调用）
+                var loopOk = setAudioLoop(true);
+
+                addLog('循环警报播放器已创建并开始: ' + audioPath +
+                       ' (openPlayer=成功, setLoop=' + (loopOk ? '成功' : '失败') + ')', 'success');
+                if (typeof callback === 'function') callback(true, ret);
+            });
+        } catch (e) {
+            addLog('启动循环警报异常: ' + e.message, 'error');
+            if (typeof callback === 'function') callback(false, e);
+        }
+    }
+
+    // 停止警报
+    function stopAlarmLoop() {
+        if (!audioStreamer || typeof audioStreamer.stop !== 'function') return false;
+        try {
+            audioStreamer.stop();
+            audioLoopEnabled = false;
+            // 重置 JS 兜底计数器（下一次报警重新计数）
+            __jsReplayCount = 0;
+            addLog('已调用 audioStreamer.stop()', 'info');
+            return true;
+        } catch (e) {
+            addLog('停止警报异常: ' + e.message, 'error');
+            return false;
+        }
+    }
+
+    // 启动试听（v2 顺序：先 openPlayer，回调成功后再 setLoop(false)）
+    function startTestPlay(audioPath, callback) {
+        if (!audioStreamer) {
+            if (typeof callback === 'function') callback(false, { msg: 'audioStreamer 不可用' });
+            return;
+        }
+        try {
+            addLog('[startTestPlay] 准备打开播放器，path=' + audioPath, 'info');
+            // v2 顺序调整：先 openPlayer，回调成功后再 setLoop(false)（与 startAlarmLoop 保持一致）
+            audioStreamer.openPlayer({ path: audioPath }, function(ret) {
+                addLog('[openPlayer 回调] ret=' + JSON.stringify(ret || {}), 'info');
+                var openOk = !!(ret && ret.status);
+                if (!openOk) {
+                    addLog('试听 openPlayer 失败: ' + JSON.stringify(ret || {}), 'error');
+                    if (typeof callback === 'function') callback(false, ret);
+                    return;
+                }
+                // openPlayer 在 Android 上会自动播放，无需再调 resume()
+                // 试听是单次播放：关闭循环
+                var loopOk = setAudioLoop(false);
+
+                addLog('试听播放器已创建并开始: ' + audioPath +
+                       ' (openPlayer=成功, setLoop=' + (loopOk ? '成功' : '失败') + ')', 'success');
+                if (typeof callback === 'function') callback(true, ret);
+            });
+        } catch (e) {
+            if (typeof callback === 'function') callback(false, e);
+        }
+    }
+
+    // 停止试听（与警报共用同一个原生播放器实例）
+    function stopTestPlay() {
+        return stopAlarmLoop();
     }
 
     // 检查短信读取权限
@@ -1450,42 +1740,52 @@
         try {
             // 如果正在播放，先停止
             if (isPlaying) {
-                api.stopPlay();
+                stopAlarmLoop();
                 isPlaying = false;
                 addLog('停止之前的警报铃声', 'success');
             }
-            
+
             // 播放提醒音效
             // 警车长音效：policeCar_alert.mp3
             // 简短三秒音效：short_ring.mp3
             var audioPath = 'widget://res/' + selectedSound; // 需要准备一个提醒音效
-            
-            isPlaying = true;
-            addLog('开始连续播放警报铃声，点击"我知道了"停止', 'success');
+
+            addLog('准备启动原生循环警报铃声', 'success');
             updateStatusDisplay();
 
             // 获取设置的警报音量
             var alertVolumePercent = document.getElementById('alertVolume').value;
             var alertVolume = alertVolumePercent / 100;
-            
+
             // 保存当前音量并设置警报音量，通过回调接口实现音量设置后触发播放，避免异步问题
             saveAndSetVolume(alertVolume, function(success) {
-                if (success) {
-                    // 开始连续播放铃声
-                    startContinuousPlay(audioPath, smsContent);
-                } else {
+                if (!success) {
                     isPlaying = false;
                     addLog('音量设置失败，无法播放警报铃声', 'error');
                     updateStatusDisplay();
                     restoreOriginalVolume();
+                    return;
                 }
+                // 启动原生循环警报（openPlayer + setLoop(true) + resume）
+                startAlarmLoop(audioPath, function(playSuccess, error) {
+                    if (playSuccess) {
+                        isPlaying = true;
+                        addLog('开始原生循环播放警报铃声，点击"我知道了"停止', 'success');
+                        updateStatusDisplay();
+                    } else {
+                        isPlaying = false;
+                        addLog('警报铃声启动失败: ' + JSON.stringify(error || {}), 'error');
+                        updateStatusDisplay();
+                        restoreOriginalVolume();
+                    }
+                });
             });
 
             // 显示提醒对话框（如果还没有显示）
             if (!isDialogShowing) {
                 showAlertDialog(smsContent);
             }
-            
+
         } catch (e) {
             isPlaying = false;
             addLog('警报铃声播放异常: ' + e.message, 'error');
@@ -1493,42 +1793,6 @@
             // 异常情况下也要恢复原始音量
             restoreOriginalVolume();
         }
-    }
-
-    // 连续播放函数
-    function startContinuousPlay(audioPath, smsContent) {
-        if (!isPlaying) {
-            return; // 如果已经停止播放，退出循环
-        }
-        
-        api.startPlay({
-            path: audioPath,
-        }, function(ret, err) {
-            if (ret) {
-                // 播放完成，如果还在播放状态，继续播放下一遍
-                if (isPlaying) {
-                    addLog('警报铃声播放完成，继续下一遍...', 'success');
-                    // 短暂延迟后继续播放
-                    setTimeout(function() {
-                        if (isPlaying) {
-                            startContinuousPlay(audioPath, smsContent);
-                        }
-                    }, 500); // 500ms延迟确保音频设备完成播放周期
-                } else {
-                    addLog('警报铃声已停止', 'success');
-                    updateStatusDisplay();
-                    // 恢复原始音量
-                    restoreOriginalVolume();
-                }
-            } else {
-                isPlaying = false;
-                addLog('警报铃声播放失败: ' + JSON.stringify(err), 'error');
-                updateStatusDisplay();
-                // 播放失败也要恢复原始音量
-                restoreOriginalVolume();
-                
-            }
-        });
     }
 
     // 显示提醒对话框
@@ -1548,13 +1812,15 @@
             // 用户点击后停止播放
             isDialogShowing = false; // 重置对话框状态
             if (isPlaying) {
-                api.stopPlay();
+                stopAlarmLoop();
                 isPlaying = false;
                 addLog('用户点击确认，停止警报铃声', 'success');
                 updateStatusDisplay();
                 // 确保恢复原始音量
                 restoreOriginalVolume();
             }
+            // 兜底：手动点击确认时也重置 JS 兜底计数器（防止 stopAlarmLoop 异常时残留）
+            __jsReplayCount = 0;
         });
     }
 
@@ -1590,7 +1856,9 @@
     var LOG_KEEP_DAYS = 7;
     var LOG_CLEAN_INTERVAL_MS = 24 * 60 * 60 * 1000; // 每 24h 触发一次清理
     var __lastLogCleanTime = 0;
-    var __logWritePending = false; // 写入互斥锁（防止并发追加丢内容）
+    // 写入队列：addLog 高频触发时不再"跳过"，而是排队依次写入，保证不丢日志
+    var __logQueue = [];
+    var __logWriting = false; // 是否正在处理队列
 
     // 工具：获取当天日志文件路径
     function getTodayLogPath() {
@@ -1609,42 +1877,58 @@
                String(d.getDate()).padStart(2, '0');
     }
 
-    // 写一条日志到当天文件（追加模式）
-    // 读旧内容 → 合并 → 写回，整个过程异步 + 互斥锁，失败静默
+    // 工具：把 Date 转为 [HH:MM:SS]
+    function formatLogTime(d) {
+        return String(d.getHours()).padStart(2, '0') + ':' +
+               String(d.getMinutes()).padStart(2, '0') + ':' +
+               String(d.getSeconds()).padStart(2, '0');
+    }
+
+    // 入队一条日志；由队列处理器依次落盘
+    // 关键修复：旧版用 __logWritePending 互斥锁直接跳过新日志，导致高频 addLog 时大面积丢失
     function writeLogToFile(text, level) {
-        if (__logWritePending) {
-            // 已有写入任务在进行，跳过本次（极端高频下避免堆积）
-            return;
-        }
-        __logWritePending = true;
-
         try {
-            var now = new Date();
-            var time = String(now.getHours()).padStart(2, '0') + ':' +
-                       String(now.getMinutes()).padStart(2, '0') + ':' +
-                       String(now.getSeconds()).padStart(2, '0');
-            var line = '[' + time + '][' + (level || 'info') + '] ' + text + '\n';
-            var path = getTodayLogPath();
-
-            api.readFile({
-                sync: false,
-                path: path
-            }, function(ret, err) {
-                var oldContent = (ret && ret.data) ? String(ret.data) : '';
-                api.writeFile({
-                    path: path,
-                    data: oldContent + line
-                }, function(wRet, wErr) {
-                    __logWritePending = false;
-                    // 写入失败静默（UI 不受影响）
-                    // 触发一次清理检查（每 24h 一次）
-                    maybeCleanOldLogs();
-                });
+            __logQueue.push({
+                time: formatLogTime(new Date()),
+                level: level || 'info',
+                text: text
             });
         } catch (e) {
-            __logWritePending = false;
-            // 静默
+            // 入队本身失败才静默
         }
+        // 触发一次处理（若已在跑则什么都不做，处理器会自己取队列）
+        processLogQueue();
+    }
+
+    // 顺序处理日志队列：取出一条 → 读旧内容 → 合并 → 写回 → 处理下一条
+    function processLogQueue() {
+        if (__logWriting) return;
+        if (__logQueue.length === 0) return;
+
+        __logWriting = true;
+        var item = __logQueue.shift();
+        var line = '[' + item.time + '][' + item.level + '] ' + item.text + '\n';
+        var path = getTodayLogPath();
+
+        api.readFile({
+            sync: false,
+            path: path
+        }, function(ret, err) {
+            var oldContent = (ret && ret.data) ? String(ret.data) : '';
+            api.writeFile({
+                path: path,
+                data: oldContent + line
+            }, function(wRet, wErr) {
+                __logWriting = false;
+                // 写入失败静默（UI 不受影响）
+                if (!wErr) {
+                    // 触发一次清理检查（每 24h 一次）
+                    maybeCleanOldLogs();
+                }
+                // 不管成功失败都继续处理队列，避免一条卡死阻塞后续
+                processLogQueue();
+            });
+        });
     }
 
     // 检查并清理 7 天前的日志文件
@@ -1891,14 +2175,17 @@
     function stopAlert() {
         if (isPlaying) {
             try {
-                api.stopPlay();
+                var stopped = stopAlarmLoop();
+                if (!stopped) {
+                    throw new Error('audioStreamer.stop 调用失败');
+                }
                 isPlaying = false;
                 addLog('警报铃声已手动停止', 'success');
                 updateStatusDisplay();
-                
+
                 // 恢复原始音量
                 restoreOriginalVolume();
-                
+
                 api.toast({
                     msg: '警报铃声已停止',
                     duration: 2000,
@@ -2346,7 +2633,10 @@
         if (isTestPlaying) {
             // 如果正在试听，则停止试听
             try {
-                api.stopPlay();
+                var stopped = stopTestPlay();
+                if (!stopped) {
+                    throw new Error('audioStreamer.stop 调用失败');
+                }
                 isTestPlaying = false;
                 testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
                 addLog('音效试听已停止', 'success');
@@ -2395,31 +2685,25 @@
             // 保存当前音量并设置警报音量
             saveAndSetVolume(alertVolume);
 
-            api.startPlay({
-                path: audioPath,
-            }, function(ret, err) {
-                if (ret) {
-                    addLog('音效试听完成', 'success');
-                    api.toast({
-                        msg: '✅ 音效试听完成',
-                        duration: 1500,
-                        location: 'middle'
-                    });
+            // 启动试听（原生单次播放）
+            // 注意：ret.status 只表示播放器打开成功，不代表播放完成；
+            // 单次播放自然完成时由 registerAudioStateListener 监听 complete 状态自动恢复 UI 和音量。
+            startTestPlay(audioPath, function(playSuccess, error) {
+                if (playSuccess) {
+                    // 试听已启动成功，按钮和音量状态由 complete 事件 / 用户手动停止来恢复
+                    addLog('试听已启动，等待自然完成或用户停止', 'success');
                 } else {
-                    addLog('音效试听失败: ' + JSON.stringify(err), 'error');
+                    isTestPlaying = false;
+                    testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
+                    addLog('音效试听启动失败: ' + JSON.stringify(error || {}), 'error');
                     api.toast({
-                        msg: '❌ 音效试听失败',
+                        msg: '❌ 音效试听启动失败',
                         duration: 2000,
                         location: 'middle'
                     });
+                    // 失败时立即恢复音量
+                    restoreOriginalVolume();
                 }
-
-                // 试听完成后恢复按钮状态
-                isTestPlaying = false;
-                testBtn.textContent = TEST_BTN_DEFAULT_TEXT;
-
-                // 试听完成后恢复原始音量
-                restoreOriginalVolume();
             });
         } catch (e) {
             addLog('音效试听异常: ' + e.message, 'error');

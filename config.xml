@@ -50,6 +50,12 @@
 	<feature name="smsListener"/>
 	<permission name="readSMS" />
 	<preference name="backgroundMode" value="audio"/>
+	<permission name="wakeLock" />
+	<permission name="foregroundService" />
+	<permission name="notification" />
+
+	<!-- 原生音频流播放器：用于后台/锁屏循环警报（防 WebView 30 秒掐断） -->
+	<feature name="audioStreamer"/>
 
 	<!-- 分享模块（"关于应用"页右上角分享按钮） -->
 	<feature name="shareAction">
