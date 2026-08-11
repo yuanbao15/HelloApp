@@ -80,8 +80,31 @@
 
         /* ── 滚动容器 ── */
         .scroll-container {
-            padding: 0 0 80px;
-            min-height: 100vh;
+            /* 不强制 min-height: 100vh，避免"检查更新"模式下 changelog 较短时
+               容器被撑成整屏高度、下面留出大片空白 */
+            padding: 0 0 16px;
+            /* 兜底：防止 marked.js 渲染的图片/超宽 pre/超长 URL 把容器撑破导致横向滑动
+               （代码块 .content-section pre 自带 overflow-x: auto，不受此影响）*/
+            overflow-x: hidden;
+        }
+
+        /* ── update 模式专属：让 body + 滚动容器都自然收缩，不要强制填满屏幕 ──
+           原理：
+             - 默认（about/help）内容丰富，body 至少一屏避免背景色突兀
+             - update 模式 changelog 通常很短，body 跟着内容高度收缩，
+               配合 frame h:'auto' 让 frame 高度也跟着收缩，从根本上消除下方空白
+           配合 body.mode-update 类由 JS 在 apiready 时按 mode 切换 */
+        body { display: flex; flex-direction: column; min-height: 100vh; }
+        .scroll-container { flex: 0 0 auto; }
+        body.mode-update {
+            /* update 模式：去掉 min-height 100vh，让 body 高度 = 内容高度 */
+            min-height: 0;
+        }
+        body.mode-update .scroll-container {
+            /* update 模式：保留 overflow-y 让 changelog 多时仍能上下滑动，
+               用 max-height 兜底避免 changelog 巨长时溢出屏幕 */
+            overflow-y: auto;
+            max-height: calc(100vh - 60px);
         }
 
         /* ── 应用信息头部 ── */
@@ -248,6 +271,56 @@
             word-break: break-all;
         }
         .content-section a:active { text-decoration: underline; }
+
+        /* ── MD 里的图片：限制最大宽度为容器宽度，避免超出页面导致横向滚动 ──
+           author: yuanbao */
+        .content-section img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 10px auto;
+            border-radius: 6px;
+        }
+
+        /* ── MD 里的表格（GFM）：响应式 + 强制换行，避免老 webview 表格布局迭代导致 OOM 崩溃 ──
+           author: yuanbao
+           背景：help.md 含 4 个 markdown 表格，每个 cell 是中文长文本，无样式时老 webview
+           按"内容自然宽度"算列宽 → 列宽失控 → 自动布局反复迭代 → 内存爆炸 → webview 进程崩溃
+           关键 3 行：table-layout: fixed（列宽不再由内容决定）/ word-break: break-word（强制换行）
+                      / max-width: 100%（不让表格撑破容器）*/
+        .content-section table {
+            max-width: 100%;
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 13px;
+            background: #fff;
+        }
+        .content-section thead {
+            background: #f2f2f7;
+        }
+        .content-section th,
+        .content-section td {
+            padding: 8px 10px;
+            border: 1px solid #e5e5ea;
+            /* 三件套强制长文本换行，避免单格宽度无限扩张 */
+            word-break: break-word;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            line-height: 1.5;
+            color: #3a3a3c;
+            text-align: left;
+            vertical-align: top;
+        }
+        .content-section th {
+            font-weight: 600;
+            color: #1a1a1a;
+            background: #f8f8fa;
+        }
+        .content-section tr:nth-child(even) td {
+            background: #fafafa;
+        }
 
         /* ── 加载/错误状态 ── */
         .status-msg {
@@ -426,13 +499,24 @@
         aboutMarkdown = (api.pageParam && api.pageParam.aboutMarkdown) || '';
         versionInfo = (api.pageParam && api.pageParam.versionInfo) || null;
 
-        // 根据 mode 控制顶部按钮显示
+        // update 模式：内容通常较少（版本信息 + 短 changelog），不需要强制撑满一屏
+        // 给 body 加 .mode-update 类后，滚动容器不会再"填满剩余空间"
+        if (pageMode === 'update') {
+            document.body.classList.add('mode-update');
+        }
+
+        // 根据 mode 控制顶部按钮显示 + 顶部标题文案
         var refreshBtn = document.getElementById('refreshBtn');
         var shareBtn = document.getElementById('shareBtn');
         if (pageMode === 'about') {
             refreshBtn.style.display = 'flex';
             shareBtn.style.display = 'flex';
             document.getElementById('topBarTitle').textContent = '关于应用';
+        } else if (pageMode === 'help') {
+            // help 模式与 about 一样允许刷新 + 分享
+            refreshBtn.style.display = 'flex';
+            shareBtn.style.display = 'flex';
+            document.getElementById('topBarTitle').textContent = '使用帮助';
         } else {
             document.getElementById('topBarTitle').textContent = '发现新版本';
         }
@@ -479,11 +563,54 @@
                 console.log('about 刷新失败: ' + e.message);
             }
         });
+
+        // 监听主框架的"帮助内容已刷新"事件
+        // 从 _helpRefreshBuffer 读取新 HTML，原地重渲染
+        api.addEventListener({
+            name: 'helpContentRefreshed'
+        }, function(ret, err) {
+            try {
+                var newHtml = api.getPrefs({
+                    sync: true,
+                    key: '_helpRefreshBuffer'
+                });
+                if (newHtml) {
+                    scrollContainer.scrollTop = 0;
+                    aboutHtml = newHtml;
+                    renderPage();
+                    api.removePrefs({ key: '_helpRefreshBuffer' });
+                }
+            } catch (e) {
+                console.log('help 刷新失败: ' + e.message);
+            }
+        });
     };
 
     function renderPage() {
         var container = document.getElementById('content');
-        container.innerHTML = (pageMode === 'update') ? renderUpdateMode() : renderAboutMode();
+        // update/about/help 三种模式分别走各自的渲染函数
+        if (pageMode === 'update') {
+            container.innerHTML = renderUpdateMode();
+        } else if (pageMode === 'help') {
+            container.innerHTML = renderHelpMode();
+        } else {
+            container.innerHTML = renderAboutMode();
+        }
+    }
+
+    // ==============================
+    //  help 模式：使用帮助（OSS 上 help.md 的渲染）
+    //  与 about 共享 .content-section 的样式（标题/段落/列表/代码/引用/图片等）
+    //  不显示 app-header（应用图标/版本号）和"开发者通知"卡片，因为 help 是教程
+    // ==============================
+    function renderHelpMode() {
+        if (!aboutHtml) {
+            return '<div class="status-msg">'
+                 + '<div class="icon">📡</div>'
+                 + '无法获取远程帮助文档<br>请检查网络连接</div>';
+        }
+        // 直接把渲染后的 MD 包成一个 content-section 卡片，干净利落
+        return '<div class="card content-section">' + aboutHtml + '</div>';
     }
 
     // ==============================
@@ -614,14 +741,16 @@
 
     // ── 顶部按钮动作 ──
 
-    // 刷新 about 内容（强制重新拉取 OSS）
-    // 通知主框架重新拉取，成功后发回 aboutContentRefreshed 信号
+    // 刷新 about / help 内容（强制重新拉取 OSS）
+    // 通知主框架重新拉取，成功后发回对应信号
     // （避免 execScript 注入长 HTML 字符串触发 SyntaxError）
     function refreshAboutContent() {
         var btn = document.getElementById('refreshBtn');
         btn.classList.add('spinning');
+        // 按当前 mode 触发主框架对应的刷新动作
+        var eventName = (pageMode === 'help') ? 'triggerRefreshHelp' : 'triggerRefreshAbout';
         api.sendEvent({
-            name: 'triggerRefreshAbout'
+            name: eventName
         });
         // 2 秒后转回（不论成功失败）
         setTimeout(function() {
@@ -629,7 +758,7 @@
         }, 2000);
     }
 
-    // 分享 about 内容（分享纯文本给朋友）
+    // 分享 about / help 内容（分享纯文本给朋友）
     function shareAboutContent() {
         // 优先用原始 MD；若无则从渲染后的 HTML 反推
         var shareText = aboutMarkdown || aboutHtml.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim();
@@ -637,13 +766,17 @@
             api.toast({ msg: '没有可分享的内容', duration: 2000, location: 'middle' });
             return;
         }
+        // 分享弹窗的标题也按 mode 区分
+        var shareTitle = (pageMode === 'help')
+            ? '交警短信增强提醒 - 使用帮助'
+            : '交警短信增强提醒 - 关于应用';
         // APICloud 的分享模块
         try {
             var shareModule = api.require('shareAction');
             if (shareModule) {
                 shareModule.share({
                     text: shareText,
-                    title: '交警短信增强提醒 - 关于应用'
+                    title: shareTitle
                 });
             } else {
                 // 兜底：复制到剪贴板

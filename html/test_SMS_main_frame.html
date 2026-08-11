@@ -155,6 +155,7 @@
         // 若以后想改成单 L 的 HelloApp，需要同步修改这里 + version.json。
         var OSS_BASE_URL = 'https://yuanbao-oss.oss-cn-shenzhen.aliyuncs.com/file/public/develop_resources/YB/HellloApp/yb_files/';
         var ABOUT_MD_URL = OSS_BASE_URL + 'about.md';       // 开发者通知（纯 markdown）
+        var HELP_MD_URL = OSS_BASE_URL + 'help.md';         // 使用帮助（纯 markdown，权限/白名单/截图等）
         var VERSION_JSON_URL = OSS_BASE_URL + 'version.json'; // 版本信息（JSON）
         var CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
 
@@ -174,6 +175,10 @@
         // about.md 缓存
         var cachedAboutHtml = null;
         var aboutCacheTimestamp = 0;
+
+        // help.md 缓存（使用帮助，单独存一份避免互相覆盖）
+        var cachedHelpHtml = null;
+        var helpCacheTimestamp = 0;
 
         // version.json 缓存
         var cachedVersionInfo = null;
@@ -350,6 +355,30 @@
                 }, true);
             });
 
+            // 监听使用帮助页面的"刷新内容"请求（使用帮助页右上角的刷新按钮）
+            // 流程与 about 模式一致，只是拉的是 help.md 而非 about.md
+            api.addEventListener({
+                name: 'triggerRefreshHelp'
+            }, function(ret, err) {
+                console.log('收到刷新 help 内容请求');
+                api.showProgress({ title: '正在刷新…', modal: true });
+                fetchHelpContent(function(html, err) {
+                    api.hideProgress();
+                    if (html) {
+                        api.setPrefs({
+                            key: '_helpRefreshBuffer',
+                            value: html
+                        });
+                        api.sendEvent({
+                            name: 'helpContentRefreshed'
+                        });
+                        api.toast({ msg: '已刷新最新内容', duration: 1500, location: 'bottom' });
+                    } else {
+                        api.toast({ msg: '刷新失败，请检查网络', duration: 2000, location: 'middle' });
+                    }
+                }, true);
+            });
+
         };
         
         // 初始化首页
@@ -492,7 +521,8 @@
                 title: '更多选项',
                 cancelTitle: '取消',
                 destructiveTitle: '',
-                buttons: ['关于应用', '检查更新', '清除缓存', '导出数据', '导入数据', '打赏捐赠']
+                // 顺序：常用入口靠前；使用帮助放在"关于应用"和"检查更新"之间
+                buttons: ['关于应用', '使用帮助', '检查更新', '清除缓存', '导出数据', '导入数据', '打赏捐赠']
             }, function(ret, err) {
                 console.log('actionSheet按钮索引', ret.buttonIndex);
                 if (ret && ret.buttonIndex !== 0) { // 0是取消
@@ -501,18 +531,21 @@
                             showAboutApp();
                             break;
                         case 2:
-                            checkForUpdates();
+                            showHelpDoc();
                             break;
                         case 3:
-                            showClearCacheMenu();
+                            checkForUpdates();
                             break;
                         case 4:
-                            exportAllData();
+                            showClearCacheMenu();
                             break;
                         case 5:
-                            importAllData();
+                            exportAllData();
                             break;
                         case 6:
+                            importAllData();
+                            break;
+                        case 7:
                             api.openFrame({
                                 name: 'donateFrame',
                                 url: './test_SMS_donate.html',
@@ -574,6 +607,31 @@
             console.log('导航状态更新完成');
         }
         
+        // 使用帮助 - 从 OSS 拉取 help.md 并展示（复用 about frame，mode=help）
+        // help.md 主要内容：权限设置、电源白名单、短信/通知权限、截图等
+        // 后期只需在 OSS 上更新 help.md 即可生效，无需发版
+        function showHelpDoc() {
+            // 1) 内存缓存命中直接用
+            if (cachedHelpHtml && (Date.now() - helpCacheTimestamp < CACHE_TTL)) {
+                openAboutFrame('help', api.appVersion || '1.0.0', cachedHelpHtml);
+                return;
+            }
+            // 2) 走网络（fetchHelpContent 内部已带"网络失败 → 本地缓存兜底"逻辑）
+            api.showProgress({ title: '加载中…', modal: true });
+            fetchHelpContent(function(html, err) {
+                api.hideProgress();
+                if (html) {
+                    openAboutFrame('help', api.appVersion || '1.0.0', html);
+                } else {
+                    api.alert({
+                        title: '提示',
+                        msg: '无法获取"使用帮助"内容，请检查网络后重试',
+                        buttons: ['确定']
+                    });
+                }
+            });
+        }
+
         // 关于应用 - 从 OSS 拉取 about.md 并展示
         function showAboutApp() {
             // api.appVersion 来自 config.xml，真实反映当前安装版本
@@ -1611,6 +1669,111 @@
             });
         }
 
+        // 从 OSS 拉取 help.md（使用帮助文档：权限/白名单/截图等）
+        // 与 fetchAboutContent 结构一致，但走独立的 URL + 独立的内存缓存变量
+        // 本地缓存复用 prefs key（helpHtmlCache / helpMarkdownCache），避免和 about 互相覆盖
+        function fetchHelpContent(callback, force) {
+            // 内存缓存命中（强制刷新时跳过）
+            if (!force && cachedHelpHtml && (Date.now() - helpCacheTimestamp < CACHE_TTL)) {
+                callback(cachedHelpHtml, null);
+                return;
+            }
+            // 走网络
+            api.ajax({
+                url: HELP_MD_URL,
+                method: 'get',
+                dataType: 'text',
+                cache: false,
+                timeout: 10
+            }, function(ret, err) {
+                if (ret && typeof ret === 'string') {
+                    var rawMd = ret.trim();
+                    // MD → HTML：优先 marked.js，否则 simpleMarkdown 兜底
+                    var html;
+                    if (window.marked) {
+                        html = (typeof window.marked.parse === 'function')
+                             ? window.marked.parse(rawMd)
+                             : window.marked(rawMd);
+                    } else {
+                        html = simpleMarkdown(rawMd);
+                    }
+                    console.log('[help] MD 已解析, 长度:', html.length);
+                    // 更新内存缓存
+                    cachedHelpHtml = html;
+                    helpCacheTimestamp = Date.now();
+                    // 持久化到本地（复用持久化函数，但 key 用 help 前缀）
+                    persistHelpCache(html, rawMd);
+                    callback(html, null);
+                } else {
+                    // 网络失败：尝试读本地缓存兜底
+                    var fallback = readHelpCache();
+                    if (fallback && !force) {
+                        cachedHelpHtml = fallback.html;
+                        helpCacheTimestamp = 0;
+                        callback(fallback.html, null);
+                    } else {
+                        callback(null, err);
+                    }
+                }
+            });
+        }
+
+        // 持久化 help.html（结构与 persistAboutCache 完全一致，key 用 help 前缀隔离）
+        function persistHelpCache(html, markdown) {
+            try {
+                api.setPrefs({ key: 'helpHtmlCache', value: html });
+                api.setPrefs({ key: 'helpHtmlCacheTime', value: Date.now().toString() });
+                if (markdown) {
+                    api.setPrefs({ key: 'helpMarkdownCache', value: markdown });
+                }
+            } catch (e) {
+                try {
+                    api.writeFile({
+                        path: 'fs://prefs_backup/helpHtmlCache.html',
+                        data: html
+                    });
+                    if (markdown) {
+                        api.writeFile({
+                            path: 'fs://prefs_backup/helpMarkdownCache.md',
+                            data: markdown
+                        });
+                    }
+                } catch (e2) {
+                    console.log('helpHtml 本地缓存写入失败: ' + e2.message);
+                }
+            }
+        }
+
+        // 读本地 help.html 缓存
+        function readHelpCache() {
+            var html = null;
+            var markdown = null;
+            try {
+                var v = api.getPrefs({ sync: true, key: 'helpHtmlCache' });
+                if (v) html = v;
+            } catch (e) {}
+            if (!html) {
+                try {
+                    var fsRet = api.readFile({ sync: true, path: 'fs://prefs_backup/helpHtmlCache.html' });
+                    if (fsRet && fsRet.data) html = fsRet.data;
+                } catch (e) {}
+            }
+            try {
+                var m = api.getPrefs({ sync: true, key: 'helpMarkdownCache' });
+                if (m) markdown = m;
+            } catch (e) {}
+            if (!markdown) {
+                try {
+                    var fsMd = api.readFile({ sync: true, path: 'fs://prefs_backup/helpMarkdownCache.md' });
+                    if (fsMd && fsMd.data) markdown = fsMd.data;
+                } catch (e) {}
+            }
+            if (html) {
+                return { html: html, markdown: markdown || '' };
+            }
+            return null;
+        }
+
         // 极简 Markdown 兜底解析器（仅处理：标题/列表/引用/段落/水平线/加粗/邮箱）
         // 仅在 marked.js 加载失败时使用，保证页面不会出现裸的 ## * - 符号
         function simpleMarkdown(md) {
@@ -1760,15 +1923,20 @@
             return 0;
         }
 
-        // 打开关于/更新页面 Frame（全屏页面）
+        // 打开关于/更新/帮助页面 Frame（全屏页面）
+        // mode: 'about' | 'update' | 'help'
+        //   - 'about': 展示 about.md 渲染后的 HTML
+        //   - 'update': 展示 version.json 的更新信息（带底部操作栏）
+        //   - 'help': 展示 help.md 渲染后的 HTML（使用帮助，复用 about 渲染逻辑）
         function openAboutFrame(mode, currentVersion, data) {
             var pageParam = {
                 mode: mode,
                 currentVersion: currentVersion
             };
-            if (mode === 'about') {
-                pageParam.aboutHtml = data;        // about.md 渲染后的 HTML
-                pageParam.aboutMarkdown = lastAboutMarkdown || ''; // 原始 MD（用于分享）
+            if (mode === 'about' || mode === 'help') {
+                pageParam.aboutHtml = data;        // md 渲染后的 HTML
+                // 原始 MD：about 用 lastAboutMarkdown；help 暂不存原始 MD（用渲染后 HTML 即可）
+                pageParam.aboutMarkdown = lastAboutMarkdown || '';
             } else {
                 pageParam.versionInfo = data;       // version.json 解析后的对象
             }
