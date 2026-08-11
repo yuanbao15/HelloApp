@@ -613,38 +613,41 @@
         .number-input-disabled { color: var(--color-text-tertiary); }
         .number-input-enabled { color: var(--color-text); }
 
-        /* ========== 通知设置 - 震动时长下拉 ========== */
-        /* 字体大小与 input 统一为 14px */
-        .vibrate-select {
+        /* ========== 通知设置 - 震动时长下拉（自定义 div+ul） ========== */
+        /* 关闭态字体与 input 统一为 14px；弹窗内 option 单独控 12px */
+        .vibrate-select-wrap {
+            position: relative;
             flex: 1;
             min-width: 0;
             max-width: 180px;
-            padding: 6px 10px;
+        }
+        /* 触发器（关闭态显示） */
+        .vibrate-select {
+            width: 100%;
+            padding: 6px 26px 6px 10px;
             border: 1px solid var(--color-divider);
             border-radius: var(--radius-sm);
             font-size: 14px;
             line-height: 1.4;
             color: var(--color-text);
             background: #fafafa;
-            -webkit-appearance: none;
-            appearance: none;
             cursor: pointer;
             transition: all .2s;
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
         }
-        .vibrate-select:focus {
+        .vibrate-select:hover {
+            border-color: #c7c7cc;
+        }
+        .vibrate-select:focus,
+        .vibrate-select.active {
             background: white;
             border-color: var(--color-primary);
             outline: none;
             box-shadow: 0 0 0 3px rgba(0,122,255,.1);
         }
-        /* 下拉箭头：使用 ::after 配合包装容器实现（更可控） */
-        .vibrate-select-wrap {
-            position: relative;
-            flex: 1;
-            min-width: 0;
-            max-width: 180px;
-            display: flex;
-        }
+        /* 下拉箭头 */
         .vibrate-select-wrap::after {
             content: '';
             position: absolute;
@@ -656,11 +659,48 @@
             border-bottom: 2px solid var(--color-text-secondary);
             transform: translateY(-70%) rotate(45deg);
             pointer-events: none;
+            transition: transform .2s;
         }
-        /* select 右侧留出箭头空间 */
-        .vibrate-select-wrap .vibrate-select {
-            max-width: 100%;
-            padding-right: 26px;
+        .vibrate-select-wrap.open::after {
+            transform: translateY(-30%) rotate(-135deg);
+        }
+        /* 弹窗列表：完全可控样式 */
+        .vibrate-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 0;
+            left: 0;
+            margin: 0;
+            padding: 4px 0;
+            list-style: none;
+            background: white;
+            border: 1px solid var(--color-divider);
+            border-radius: var(--radius-sm);
+            box-shadow: var(--shadow-md);
+            z-index: 1000;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .vibrate-dropdown.show {
+            display: block;
+        }
+        .vibrate-dropdown li {
+            padding: 7px 12px;
+            font-size: 12px;  /* 弹窗内字体 12px */
+            line-height: 1.4;
+            color: var(--color-text);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background-color .12s;
+        }
+        .vibrate-dropdown li:hover {
+            background: rgba(0,122,255,.08);
+        }
+        .vibrate-dropdown li.selected {
+            color: var(--color-primary);
+            font-weight: 500;
+            background: rgba(0,122,255,.06);
         }
 
     </style>
@@ -744,13 +784,14 @@
                 </div>
                 <div class="volume-item" id="vibrateDurationRow">
                     <span class="label">震动时长</span>
-                    <div class="vibrate-select-wrap">
-                        <select id="vibrateDuration" class="vibrate-select">
-                            <option value="0">默认短震</option>
-                            <option value="10">10秒</option>
-                            <option value="30">30秒</option>
-                            <option value="60">60秒</option>
-                        </select>
+                    <div class="vibrate-select-wrap" id="vibrateSelectWrap">
+                        <div class="vibrate-select" id="vibrateSelectDisplay" tabindex="0">默认短震</div>
+                        <ul class="vibrate-dropdown" id="vibrateDropdown">
+                            <li data-value="0">默认短震</li>
+                            <li data-value="10">10秒</li>
+                            <li data-value="30">30秒</li>
+                            <li data-value="60">60秒</li>
+                        </ul>
                     </div>
                 </div>
             </div>
@@ -809,7 +850,10 @@
         }
         window.__SMS_MONITOR_LOCK = true;
         console.log('【SMS监听】实例启动:', window.__SMS_MONITOR_INSTANCE_ID);
-        
+
+        // 启动时清理 7 天前的旧日志文件
+        cleanOldLogs();
+
         // 检查权限
         checkSMSPermission();
         
@@ -1538,6 +1582,101 @@
         });
     }
 
+    // ========== 日志落盘（按天切文件，保留 7 天） ==========
+    // 文件路径：fs://log/sms_monitor_YYYYMMDD.log
+    // 单行格式：[HH:MM:SS][level] message
+    var LOG_DIR = 'fs://log/';
+    var LOG_PREFIX = 'sms_monitor_';
+    var LOG_KEEP_DAYS = 7;
+    var LOG_CLEAN_INTERVAL_MS = 24 * 60 * 60 * 1000; // 每 24h 触发一次清理
+    var __lastLogCleanTime = 0;
+    var __logWritePending = false; // 写入互斥锁（防止并发追加丢内容）
+
+    // 工具：获取当天日志文件路径
+    function getTodayLogPath() {
+        var d = new Date();
+        var ymd = d.getFullYear() +
+                  String(d.getMonth() + 1).padStart(2, '0') +
+                  String(d.getDate()).padStart(2, '0');
+        return LOG_DIR + LOG_PREFIX + ymd + '.log';
+    }
+
+    // 工具：把秒数转为 YYYYMMDD（用于清理旧文件）
+    function getYmdByOffsetDays(offsetDays) {
+        var d = new Date(Date.now() - offsetDays * 24 * 60 * 60 * 1000);
+        return d.getFullYear() +
+               String(d.getMonth() + 1).padStart(2, '0') +
+               String(d.getDate()).padStart(2, '0');
+    }
+
+    // 写一条日志到当天文件（追加模式）
+    // 读旧内容 → 合并 → 写回，整个过程异步 + 互斥锁，失败静默
+    function writeLogToFile(text, level) {
+        if (__logWritePending) {
+            // 已有写入任务在进行，跳过本次（极端高频下避免堆积）
+            return;
+        }
+        __logWritePending = true;
+
+        try {
+            var now = new Date();
+            var time = String(now.getHours()).padStart(2, '0') + ':' +
+                       String(now.getMinutes()).padStart(2, '0') + ':' +
+                       String(now.getSeconds()).padStart(2, '0');
+            var line = '[' + time + '][' + (level || 'info') + '] ' + text + '\n';
+            var path = getTodayLogPath();
+
+            api.readFile({
+                sync: false,
+                path: path
+            }, function(ret, err) {
+                var oldContent = (ret && ret.data) ? String(ret.data) : '';
+                api.writeFile({
+                    path: path,
+                    data: oldContent + line
+                }, function(wRet, wErr) {
+                    __logWritePending = false;
+                    // 写入失败静默（UI 不受影响）
+                    // 触发一次清理检查（每 24h 一次）
+                    maybeCleanOldLogs();
+                });
+            });
+        } catch (e) {
+            __logWritePending = false;
+            // 静默
+        }
+    }
+
+    // 检查并清理 7 天前的日志文件
+    // 启动时强制调一次；写入时每 24h 触发一次
+    function cleanOldLogs() {
+        try {
+            for (var i = LOG_KEEP_DAYS; i < LOG_KEEP_DAYS + 30; i++) {
+                var ymd = getYmdByOffsetDays(i);
+                var path = LOG_DIR + LOG_PREFIX + ymd + '.log';
+                try {
+                    api.removeFile({
+                        sync: true,
+                        path: path
+                    });
+                } catch (e) {
+                    // 单个文件删除失败不影响其他
+                }
+            }
+        } catch (e) {
+            // 静默
+        }
+    }
+
+    // 节流版的清理：写入时每 24h 最多触发一次
+    function maybeCleanOldLogs() {
+        var now = Date.now();
+        if (now - __lastLogCleanTime > LOG_CLEAN_INTERVAL_MS) {
+            __lastLogCleanTime = now;
+            cleanOldLogs();
+        }
+    }
+
     // 添加日志：成功、失败、警告
     function addLog(text, type) {
         var logArea = document.getElementById('logArea');
@@ -1568,8 +1707,11 @@
         while (logArea.children.length > 50) {
             logArea.removeChild(logArea.lastChild);
         }
-        
+
         console.log(time + ': ' + text);
+
+        // 落盘到 fs://log/sms_monitor_YYYYMMDD.log（失败静默，不影响 UI）
+        writeLogToFile(text, type || 'info');
     }
 
     // 清空日志区（由"清除缓存 → 清除一般缓存"调用）
@@ -1658,8 +1800,14 @@
             // 震动开关 + 震动时长
             var vibrateSwitchEl = document.getElementById('vibrateEnabled');
             if (vibrateSwitchEl) vibrateSwitchEl.checked = defaultVibrateEnabled;
-            var vibrateDurationSelect = document.getElementById('vibrateDuration');
-            if (vibrateDurationSelect) vibrateDurationSelect.value = String(defaultVibrateDuration);
+            // 震动时长：自定义下拉，通过 initNotificationControl 暴露的方法重置
+            if (typeof window.__resetVibrateDisplay === 'function') {
+                window.__resetVibrateDisplay(defaultVibrateDuration);
+            } else {
+                // 兜底：直接刷新显示
+                var vibrateDisplayEl = document.getElementById('vibrateSelectDisplay');
+                if (vibrateDisplayEl) vibrateDisplayEl.textContent = '默认短震';
+            }
             var vibrateDurationRow = document.getElementById('vibrateDurationRow');
             if (vibrateDurationRow) vibrateDurationRow.classList.remove('section-disabled');
 
@@ -2042,10 +2190,55 @@
 
     // 初始化通知设置（震动开关 + 震动时长）
     // 依赖 moduleNotification_2026 的 vibrateEnabled / vibrateDuration 参数
+    // 注意：震动时长使用自定义 div+ul 下拉（避开 <select> 弹窗 native UI 不可控的问题）
     function initNotificationControl() {
         var vibrateSwitch = document.getElementById('vibrateEnabled');
         var durationRow = document.getElementById('vibrateDurationRow');
-        var durationSelect = document.getElementById('vibrateDuration');
+        var selectWrap = document.getElementById('vibrateSelectWrap');
+        var selectDisplay = document.getElementById('vibrateSelectDisplay');
+        var dropdown = document.getElementById('vibrateDropdown');
+
+        // 文本映射
+        var DURATION_MAP = { 0: '默认短震', 10: '10秒', 30: '30秒', 60: '60秒' };
+
+        // 工具：刷新触发器显示文字 + 弹窗中 li 选中样式
+        function refreshVibrateDisplay() {
+            selectDisplay.textContent = DURATION_MAP[vibrateDuration] || (vibrateDuration + '秒');
+            Array.prototype.forEach.call(dropdown.children, function(li) {
+                var isSelected = parseInt(li.dataset.value, 10) === vibrateDuration;
+                li.classList.toggle('selected', isSelected);
+            });
+        }
+
+        // 工具：禁用/启用"震动时长"行（震动关闭时灰显）
+        function updateDurationRowState() {
+            if (vibrateEnabled) {
+                durationRow.classList.remove('section-disabled');
+            } else {
+                durationRow.classList.add('section-disabled');
+                // 关闭时也收起弹窗
+                closeDropdown();
+            }
+        }
+
+        // 工具：打开/关闭下拉
+        function openDropdown() {
+            selectWrap.classList.add('open');
+            dropdown.classList.add('show');
+            selectDisplay.classList.add('active');
+        }
+        function closeDropdown() {
+            selectWrap.classList.remove('open');
+            dropdown.classList.remove('show');
+            selectDisplay.classList.remove('active');
+        }
+        function toggleDropdown() {
+            if (dropdown.classList.contains('show')) {
+                closeDropdown();
+            } else {
+                openDropdown();
+            }
+        }
 
         // 加载震动开关
         var savedVibrateEnabled = api.getPrefs({sync: true, key: 'vibrateEnabled'});
@@ -2065,19 +2258,7 @@
         } else {
             vibrateDuration = 0;
         }
-        // 同步 select 选中状态
-        if (durationSelect) {
-            durationSelect.value = String(vibrateDuration);
-        }
-
-        // 工具：禁用/启用"震动时长"行（震动关闭时灰显）
-        function updateDurationRowState() {
-            if (vibrateEnabled) {
-                durationRow.classList.remove('section-disabled');
-            } else {
-                durationRow.classList.add('section-disabled');
-            }
-        }
+        refreshVibrateDisplay();
         updateDurationRowState();
 
         // 监听震动开关变化
@@ -2100,17 +2281,62 @@
             addLog('震动提醒已' + (vibrateEnabled ? '启用' : '禁用'), 'success');
         });
 
-        // 监听震动时长变化（select change）
-        if (durationSelect) {
-            durationSelect.addEventListener('change', function(e) {
-                vibrateDuration = parseInt(e.target.value, 10);
-                api.setPrefs({
-                    key: 'vibrateDuration',
-                    value: String(vibrateDuration)
-                });
-                addLog('震动时长已设置为: ' + (vibrateDuration === 0 ? '默认短震' : (vibrateDuration + '秒')), 'success');
+        // 监听震动时长 - 点击触发器切换弹窗
+        selectDisplay.addEventListener('click', function(e) {
+            // 关闭震动时不允许打开
+            if (!vibrateEnabled) {
+                addLog('请先开启震动提醒', 'warning');
+                return;
+            }
+            e.stopPropagation();
+            toggleDropdown();
+        });
+        // 键盘支持：Enter/Space 打开
+        selectDisplay.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (vibrateEnabled) toggleDropdown();
+            } else if (e.key === 'Escape') {
+                closeDropdown();
+            }
+        });
+
+        // 监听震动时长 - 点击 li 选中
+        dropdown.addEventListener('click', function(e) {
+            var li = e.target.closest('li');
+            if (!li || !dropdown.contains(li)) return;
+            var value = parseInt(li.dataset.value, 10);
+            if (isNaN(value) || value === vibrateDuration) {
+                closeDropdown();
+                return;
+            }
+            vibrateDuration = value;
+            refreshVibrateDisplay();
+            closeDropdown();
+            api.setPrefs({
+                key: 'vibrateDuration',
+                value: String(vibrateDuration)
             });
-        }
+            addLog('震动时长已设置为: ' + (vibrateDuration === 0 ? '默认短震' : (vibrateDuration + '秒')), 'success');
+        });
+
+        // 点击页面其他位置关闭弹窗
+        document.addEventListener('click', function(e) {
+            if (!selectWrap.contains(e.target)) {
+                closeDropdown();
+            }
+        });
+        // ESC 关闭弹窗
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeDropdown();
+        });
+
+        // 暴露给 resetUserConfig 重置用
+        window.__resetVibrateDisplay = function(seconds) {
+            vibrateDuration = seconds;
+            refreshVibrateDisplay();
+            closeDropdown();
+        };
     }
 
 
