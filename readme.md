@@ -11,8 +11,8 @@
 ##### 依赖的自定义模块：
 
 - moduleIflyVoice					讯飞语音唤醒+识别
-- moduleProcessAlive_2024			进程守护保活
-- moduleNotification_2026			通知栏推送（支持震动开关+时长）
+- moduleProcessAlive_2026			进程守护保活（支持 startAlive / stopAlive 干净关闭）
+- moduleNotification_2026			通知栏推送（支持震动开关+时长+闪光灯模式）
 - pdfReader			PDF查看和标注
 - moduleUHF  	   超高频RFID读写
 - moduleNFC 		NFC读块

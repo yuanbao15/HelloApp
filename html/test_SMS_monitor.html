@@ -794,6 +794,18 @@
                         </ul>
                     </div>
                 </div>
+                <!-- 闪光灯模式：moduleNotification_2026 v2.1 flashMode（0=不闪，1=闪两下停2s再闪两下结束，2=循环闪烁） -->
+                <div class="volume-item">
+                    <span class="label">闪光灯模式</span>
+                    <div class="vibrate-select-wrap" id="flashSelectWrap">
+                        <div class="vibrate-select" id="flashSelectDisplay" tabindex="0">闪两下</div>
+                        <ul class="vibrate-dropdown" id="flashDropdown">
+                            <li data-value="0">不闪</li>
+                            <li data-value="1">闪两下</li>
+                            <li data-value="2">循环闪烁</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -839,6 +851,7 @@
     var isDialogShowing = false; // 是否正在显示对话框
     var vibrateEnabled = true; // 是否启用震动（通知推送时）
     var vibrateDuration = 0; // 震动持续秒数：0=默认短震，10/30/60=对应循环时长
+    var flashMode = 1; // 闪光灯模式：0=不闪，1=闪两下停2s再闪两下结束，2=循环闪烁（循环时长复用 vibrateDuration）
     
     // 统计相关变量
     var alertRecords = []; // 警报记录数组
@@ -1181,7 +1194,7 @@
         try {
             // 使用正确的smsListener模块，用于监听短信
             smsListenerModule = api.require('smsListener');
-            moduleProcessAlive = api.require('moduleProcessAlive_2024'); // YB-自己的进程守护模块，用于保活
+            moduleProcessAlive = api.require('moduleProcessAlive_2026'); // YB-自己的进程守护模块，用于保活
             moduleNotification = api.require('moduleNotification_2026'); // YB-自己的通知模块（升级版：支持震动开关+时长）
             addLog('短信监听模块初始化成功，另有进程守护模块和通知模块', 'success');
         } catch (e) {
@@ -1581,15 +1594,13 @@
                 // 使用正确的API注销短信监听
                 smsListenerModule.unRegisterSmsListener();
             }
-
-            // 同时停止进程保活（B4 修复）
-            stopAlive();
-
             isListening = false;
             addLog('短信监听已停止', 'success');
-
         } catch (e) {
             addLog('停止短信监听失败: ' + e.message, 'error');
+        } finally {
+            // 无论注销是否成功，关闭开关都必须终止进程守护（moduleProcessAlive_2026 支持干净关闭）
+            stopAlive();
         }
     }
 
@@ -1819,6 +1830,8 @@
                 // 确保恢复原始音量
                 restoreOriginalVolume();
             }
+            // 终止通知推送触发的循环震动和闪光灯闪烁（即使铃声已停，震动/闪光可能仍在进行）
+            stopVibrateFlash();
             // 兜底：手动点击确认时也重置 JS 兜底计数器（防止 stopAlarmLoop 异常时残留）
             __jsReplayCount = 0;
         });
@@ -2023,6 +2036,7 @@
             var defaultVolumePercent = 50; // 与 HTML input value="50" 一致
             var defaultVibrateEnabled = true;
             var defaultVibrateDuration = 0;
+            var defaultFlashMode = 1;
 
             // 1) 如果在监听，先停止
             if (isListening) {
@@ -2040,6 +2054,7 @@
             enableNumberMatch = defaultEnableNumberMatch;
             vibrateEnabled = defaultVibrateEnabled;
             vibrateDuration = defaultVibrateDuration;
+            flashMode = defaultFlashMode;
 
             // 3) 重置 UI
             var smsSwitch = document.getElementById('smsSwitch');
@@ -2094,6 +2109,15 @@
             }
             var vibrateDurationRow = document.getElementById('vibrateDurationRow');
             if (vibrateDurationRow) vibrateDurationRow.classList.remove('section-disabled');
+            // 闪光灯模式（重置为默认 1=闪两下）
+            var flashSelectDisplayEl = document.getElementById('flashSelectDisplay');
+            if (flashSelectDisplayEl) flashSelectDisplayEl.textContent = '闪两下';
+            var flashDropdownEl = document.getElementById('flashDropdown');
+            if (flashDropdownEl) {
+                Array.prototype.forEach.call(flashDropdownEl.children, function(li) {
+                    li.classList.toggle('selected', parseInt(li.dataset.value, 10) === defaultFlashMode);
+                });
+            }
 
             // 4) 禁用相关区域（开关关闭后）
             if (typeof disableSections === 'function') {
@@ -2383,25 +2407,24 @@
         });
     }
 
-    // 开启线程常驻
+    // 开启进程守护（线程常驻）：moduleProcessAlive_2026 前台服务保活 + 被杀自动恢复
     function startAlive() {
-        // 不再重复 require，initSMSListenerModule 已经 require 过 moduleProcessAlive_2024
+        // 不再重复 require，initSMSListenerModule 已经 require 过 moduleProcessAlive_2026，这里仅兜底
         if (!moduleProcessAlive) {
-            moduleProcessAlive = api.require('moduleProcessAlive_2024');
+            moduleProcessAlive = api.require('moduleProcessAlive_2026');
         }
         var params = {};
         moduleProcessAlive.startAlive(params, function (ret, err) {
-            if (ret) {
-                addLog('线程常驻已启动', 'success');
+            if (ret && ret.status === 'success') {
+                addLog('进程守护已开启', 'success');
             } else {
-                addLog('线程常驻启动失败: ' + JSON.stringify(err), 'error');
+                addLog('进程守护开启失败: ' + JSON.stringify(err || ret), 'error');
             }
         });
     }
 
-    // 停止线程常驻
-    // 注意：原注释"-未成功"，模块文档未公开 stopAlive 接口，先尝试调用并容错处理。
-    // 即便 stopAlive 调用失败，主流程的短信监听也已停止，不影响主体功能（B4 修复）。
+    // 停止进程守护（线程常驻）
+    // moduleProcessAlive_2026 新增 stopAlive()：干净关闭前台服务、移除常驻通知、之后服务不再被拉起
     function stopAlive() {
         if (!moduleProcessAlive) {
             return;
@@ -2409,14 +2432,14 @@
         try {
             var params = {};
             moduleProcessAlive.stopAlive(params, function (ret, err) {
-                if (ret) {
-                    addLog('线程常驻已停止', 'success');
+                if (ret && ret.status === 'success') {
+                    addLog('进程守护已停止，常驻通知已移除', 'success');
                 } else {
-                    addLog('线程常驻停止失败（模块可能不支持 stopAlive 接口）: ' + JSON.stringify(err), 'warning');
+                    addLog('进程守护停止失败: ' + JSON.stringify(err || ret), 'warning');
                 }
             });
         } catch (e) {
-            // 静默处理：模块不支持 stopAlive 时不应阻塞主流程
+            // 模块调用异常时不应阻塞主流程（开关关闭仍需继续执行后续逻辑）
             console.log('stopAlive 调用异常（可忽略）: ' + e.message);
         }
     }
@@ -2427,7 +2450,10 @@
             content : content,
             // moduleNotification_2026 升级参数：震动开关 + 震动时长
             vibrateEnabled: vibrateEnabled,
-            vibrateDuration: vibrateDuration
+            vibrateDuration: vibrateDuration,
+            // moduleNotification_2026 v2.1 参数：闪光灯模式（0=不闪，1=闪两下停2s再闪两下结束，2=循环闪烁）
+            // 模式2循环闪烁的总时长复用 vibrateDuration（震动时长）
+            flashMode: flashMode
         };
         moduleNotification.showNotification(params, function(ret, err){
             if (ret) {
@@ -2436,6 +2462,23 @@
                 addLog('显示通知失败: ' + JSON.stringify(err), 'error');
             }
         });
+    }
+
+    // 停止正在循环的震动和闪光灯（moduleNotification_2026 v2.2 closeVibrateFlash）
+    // 用于"我知道了"等场景提前终止长震动/循环闪烁；无循环进行时调用不会报错
+    function stopVibrateFlash() {
+        if (!moduleNotification) return;
+        try {
+            moduleNotification.closeVibrateFlash({}, function(ret, err) {
+                if (ret && ret.status) {
+                    addLog('已停止震动/闪光灯', 'success');
+                } else {
+                    addLog('停止震动/闪光灯失败: ' + JSON.stringify(err || ret), 'warning');
+                }
+            });
+        } catch (e) {
+            addLog('停止震动/闪光灯异常: ' + e.message, 'warning');
+        }
     }
 
     // 初始化音效控制
@@ -2484,9 +2527,14 @@
         var selectWrap = document.getElementById('vibrateSelectWrap');
         var selectDisplay = document.getElementById('vibrateSelectDisplay');
         var dropdown = document.getElementById('vibrateDropdown');
+        // 闪光灯模式下拉元素
+        var flashSelectWrap = document.getElementById('flashSelectWrap');
+        var flashSelectDisplay = document.getElementById('flashSelectDisplay');
+        var flashDropdown = document.getElementById('flashDropdown');
 
         // 文本映射
         var DURATION_MAP = { 0: '默认短震', 10: '10秒', 30: '30秒', 60: '60秒' };
+        var FLASH_MAP = { 0: '不闪', 1: '闪两下', 2: '循环闪烁' };
 
         // 工具：刷新触发器显示文字 + 弹窗中 li 选中样式
         function refreshVibrateDisplay() {
@@ -2547,6 +2595,85 @@
         }
         refreshVibrateDisplay();
         updateDurationRowState();
+
+        // 工具：刷新闪光灯模式显示文字 + 弹窗中 li 选中样式
+        function refreshFlashDisplay() {
+            flashSelectDisplay.textContent = FLASH_MAP[flashMode] || ('模式' + flashMode);
+            Array.prototype.forEach.call(flashDropdown.children, function(li) {
+                var isSelected = parseInt(li.dataset.value, 10) === flashMode;
+                li.classList.toggle('selected', isSelected);
+            });
+        }
+        // 工具：打开/关闭闪光灯下拉
+        function flashOpenDropdown() {
+            flashSelectWrap.classList.add('open');
+            flashDropdown.classList.add('show');
+            flashSelectDisplay.classList.add('active');
+        }
+        function flashCloseDropdown() {
+            flashSelectWrap.classList.remove('open');
+            flashDropdown.classList.remove('show');
+            flashSelectDisplay.classList.remove('active');
+        }
+        function flashToggleDropdown() {
+            if (flashDropdown.classList.contains('show')) {
+                flashCloseDropdown();
+            } else {
+                flashOpenDropdown();
+            }
+        }
+
+        // 加载闪光灯模式（必须是 0/1/2 之一，默认 1）
+        var savedFlashMode = api.getPrefs({sync: true, key: 'flashMode'});
+        var validFlashModes = ['0', '1', '2'];
+        if (savedFlashMode && validFlashModes.indexOf(savedFlashMode) !== -1) {
+            flashMode = parseInt(savedFlashMode, 10);
+        } else {
+            flashMode = 1;
+        }
+        refreshFlashDisplay();
+
+        // 监听闪光灯模式 - 点击触发器切换弹窗
+        flashSelectDisplay.addEventListener('click', function(e) {
+            e.stopPropagation();
+            flashToggleDropdown();
+        });
+        // 键盘支持：Enter/Space 打开，Escape 关闭
+        flashSelectDisplay.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                flashToggleDropdown();
+            } else if (e.key === 'Escape') {
+                flashCloseDropdown();
+            }
+        });
+
+        // 监听闪光灯模式 - 点击 li 选中
+        flashDropdown.addEventListener('click', function(e) {
+            var li = e.target.closest('li');
+            if (!li || !flashDropdown.contains(li)) return;
+            var value = parseInt(li.dataset.value, 10);
+            if (isNaN(value) || value === flashMode) {
+                flashCloseDropdown();
+                return;
+            }
+            flashMode = value;
+            refreshFlashDisplay();
+            flashCloseDropdown();
+            api.setPrefs({
+                key: 'flashMode',
+                value: String(flashMode)
+            });
+            addLog('闪光灯模式已设置为: ' + FLASH_MAP[flashMode] +
+                (flashMode === 2 ? '（循环闪烁时长同震动时长）' : ''), 'success');
+        });
+
+        // 点击页面其他位置关闭闪光灯弹窗
+        document.addEventListener('click', function(e) {
+            if (!flashSelectWrap.contains(e.target)) {
+                flashCloseDropdown();
+            }
+        });
 
         // 监听震动开关变化
         vibrateSwitch.addEventListener('change', function(e) {
