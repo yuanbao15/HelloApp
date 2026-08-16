@@ -403,6 +403,14 @@
                             <div style="font-size: 24px; font-weight: bold; color: #ff8800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="lastAlert">-</div>
                             <div style="font-size: 12px; color: #666;">最近警报</div>
                         </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 24px; font-weight: bold; color: #e6531f;" id="avgResponseTime">-</div>
+                            <div style="font-size: 12px; color: #666;">平均响应时长</div>
+                        </div>
+                        <div class="grid-item" style="text-align: center; padding: 10px; background: white; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <div style="font-size: 24px; font-weight: bold; color: #6f42c1;" id="avgHandleTime">-</div>
+                            <div style="font-size: 12px; color: #666;">平均处理时长</div>
+                        </div>
                     </div>
                 </div>
                 
@@ -888,6 +896,27 @@
         document.getElementById('avgPerMonth').textContent = avgPerMonth;
         document.getElementById('maxMonth').textContent = maxMonth;
         document.getElementById('lastAlert').textContent = lastAlert;
+
+        // 计算平均响应时长 / 平均处理时长（仅统计有记录的条目）
+        var respArr = [];
+        var handArr = [];
+        alertRecords.forEach(function(record) {
+            if (record.responseTime !== null && record.responseTime !== undefined && !isNaN(record.responseTime)) {
+                respArr.push(record.responseTime);
+            }
+            if (record.handleTime !== null && record.handleTime !== undefined && !isNaN(record.handleTime)) {
+                handArr.push(record.handleTime);
+            }
+        });
+        function avgOf(arr) {
+            if (arr.length === 0) return null;
+            var sum = arr.reduce(function(a, b) { return a + b; }, 0);
+            return sum / arr.length;
+        }
+        var avgResp = avgOf(respArr);
+        var avgHand = avgOf(handArr);
+        document.getElementById('avgResponseTime').textContent = avgResp !== null ? formatDuration(avgResp) : '-';
+        document.getElementById('avgHandleTime').textContent = avgHand !== null ? formatDuration(avgHand) : '-';
         
         // 计算风险分析数据
         calculateRiskAnalysis();
@@ -1380,6 +1409,51 @@
     }
 
     // 实际渲染函数（增量入口：renderRecordsList / loadMoreRecords 都调用）
+    // 格式化秒数：分:秒（超过1小时显示 时:分:秒）
+    function formatDuration(sec) {
+        if (sec === null || sec === undefined || isNaN(sec)) return null;
+        sec = Math.max(0, Math.floor(sec));
+        var h = Math.floor(sec / 3600);
+        var m = Math.floor((sec % 3600) / 60);
+        var s = sec % 60;
+        var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+        if (h > 0) return pad(h) + ':' + pad(m) + ':' + pad(s);
+        return pad(m) + ':' + pad(s);
+    }
+
+    // 生成「响应时长 / 处理时长」展示行（无数据时返回空串）
+    function buildDurationRow(record, isTestRecord) {
+        var resp = formatDuration(record.responseTime);
+        var hand = formatDuration(record.handleTime);
+        if (!resp && !hand) return '';
+        var color = isTestRecord ? '#999' : '#666';
+        var parts = [];
+        if (resp) {
+            parts.push('<span style="color:#e6531f; font-weight:bold;">响应 ' + resp + '</span>');
+        }
+        if (hand) {
+            parts.push('<span>处理 ' + hand + '</span>');
+        }
+        return '<div style="font-size: 12px; color: ' + color + '; margin-bottom: 5px;">' + parts.join('<span style="margin:0 6px;">·</span>') + '</div>';
+    }
+
+    // 生成详情弹窗里的「响应时长 / 处理时长」两行（无数据时对应行显示"-"）
+    function buildDetailDurationRow(record, isTestRecord) {
+        var resp = formatDuration(record.responseTime);
+        var hand = formatDuration(record.handleTime);
+        var valueColor = isTestRecord ? '#999' : '#666';
+        var html = '';
+        html += '<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">' +
+                '<span style="font-weight: bold; color: ' + (isTestRecord ? '#999' : '#333') + ';">响应时长：</span>' +
+                '<span style="color: ' + (resp ? '#e6531f' : valueColor) + '; font-weight: ' + (resp ? 'bold' : 'normal') + ';">' + (resp || '-') + '</span>' +
+                '</div>';
+        html += '<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">' +
+                '<span style="font-weight: bold; color: ' + (isTestRecord ? '#999' : '#333') + ';">处理时长：</span>' +
+                '<span style="color: ' + valueColor + ';">' + (hand || '-') + '</span>' +
+                '</div>';
+        return html;
+    }
+
     function renderRecordsList() {
         var recordsList = document.getElementById('recordsList');
         var recordsHTML = '';
@@ -1427,6 +1501,7 @@
                                 </div>
                             </div>
                             <div style="font-size: 12px; color: ${isTestRecord ? '#999' : '#666'}; margin-bottom: 5px;">来自: ${record.phoneNumber}</div>
+                            ${buildDurationRow(record, isTestRecord)}
                             <div style="font-size: 12px; color: ${textColor}; line-height: 1.4; word-break: break-all;">${shortContent}</div>
                         </div>
                         <div class="delete-button" onclick="deleteSingleRecord('${record.id}')">
@@ -1786,6 +1861,7 @@
                         <span style="font-weight: bold; color: ${textColor};">来源号码：</span>
                         <span style="color: ${isTestRecord ? '#999' : '#666'};">${record.phoneNumber}</span>
                     </div>
+                    ${buildDetailDurationRow(record, isTestRecord)}
                 </div>
                 
                 <div style="margin-bottom: 15px;">

@@ -848,7 +848,11 @@
     var selectedSound = 'short_ring.mp3'; // 当前选择的音效文件
     var isTestPlaying = false; // 是否正在试听音效
     var enableNumberMatch = false; // 是否启用号码匹配
-    var isDialogShowing = false; // 是否正在显示对话框
+    var alertStartTime = 0;        // 警报事件开始时间（毫秒，静音后不清零）
+    var alertTimer = null;         // 计时刷新定时器
+    var isAlertDialogOpen = false; // 自绘警报弹窗是否打开
+    var isAlertMuted = false;      // 是否已静音（但仍在计时）
+    var currentAlertRecordId = null; // 当前正在响的警报记录 id（用于回填响应/处理时长）
     var vibrateEnabled = true; // 是否启用震动（通知推送时）
     var vibrateDuration = 0; // 震动持续秒数：0=默认短震，10/30/60=对应循环时长
     var flashMode = 1; // 闪光灯模式：0=不闪，1=闪两下停2s再闪两下结束，2=循环闪烁（循环时长复用 vibrateDuration）
@@ -891,6 +895,12 @@
         // 加载警报记录
         loadAlertRecords();
         
+        // 监听自绘警报弹窗的事件（静音 / 恢复 / 关闭 / 返回键）
+        api.addEventListener({ name: 'alertDialogMute' }, function(ret, err) { onAlertDialogMute(); });
+        api.addEventListener({ name: 'alertDialogUnmute' }, function(ret, err) { onAlertDialogUnmute(); });
+        api.addEventListener({ name: 'alertDialogConfirm' }, function(ret, err) { onAlertDialogConfirm(); });
+        api.addEventListener({ name: 'alertDialogCancel' }, function(ret, err) { onAlertDialogCancel(); });
+
         // 页面卸载时确保停止播放
         api.addEventListener({
             name: 'pause'
@@ -1303,6 +1313,7 @@
                     if (__jsReplayCount >= JS_REPLAY_MAX) {
                         addLog('[JS 兜底重播] 已达上限 ' + JS_REPLAY_MAX + ' 次（累计 ' + __jsReplayCount + '），怀疑原生 setLoop 完全失效，强制停止', 'error');
                         isPlaying = false;
+                        stopAlertTimer();
                         updateStatusDisplay();
                         restoreOriginalVolume();
                         return;
@@ -1339,6 +1350,7 @@
                 if (state === 'error') {
                     if (isPlaying) {
                         isPlaying = false;
+                        stopAlertTimer();
                         updateStatusDisplay();
                         restoreOriginalVolume();
                     }
@@ -1424,6 +1436,63 @@
         } catch (e) {
             addLog('停止警报异常: ' + e.message, 'error');
             return false;
+        }
+    }
+
+    // ========== 警报计时器（弹窗内实时显示"已持续 X 秒"） ==========
+
+    // 启动计时（警报真正开始播放后调用）
+    function startAlertTimer() {
+        stopAlertTimer();
+        alertStartTime = Date.now();
+        isAlertMuted = false;
+        alertTimer = setInterval(tickAlertTimer, 1000);
+        tickAlertTimer();
+    }
+
+    // 每秒刷新弹窗计时显示
+    function tickAlertTimer() {
+        if (!alertStartTime) return;
+        var sec = Math.floor((Date.now() - alertStartTime) / 1000);
+        if (isAlertDialogOpen) {
+            try {
+                api.execScript({
+                    frameName: 'alertDialogFrame',
+                    script: 'if(typeof updateTimerDisplay === "function") updateTimerDisplay(' + sec + ');'
+                });
+            } catch (e) {}
+        }
+    }
+
+    // 停止计时并清零（完全关闭时调用）
+    function stopAlertTimer() {
+        if (alertTimer) { clearInterval(alertTimer); alertTimer = null; }
+        alertStartTime = 0;
+        isAlertMuted = false;
+    }
+
+    // 回填当前警报记录的时长字段并保存
+    // field: 'responseTime' 或 'handleTime'
+    // 时长从 alertStartTime 计算（响铃开始时刻），单位秒
+    function fillAlertDuration(field) {
+        if (!currentAlertRecordId || !alertStartTime) return;
+        var sec = Math.max(0, Math.floor((Date.now() - alertStartTime) / 1000));
+        // 从内存数组找到对应记录并回填（可能已被 loadAlertRecords 重载，需确保最新）
+        var recordYear = null;
+        var found = false;
+        for (var i = 0; i < alertRecords.length; i++) {
+            if (alertRecords[i].id === currentAlertRecordId) {
+                if (alertRecords[i][field] === null || alertRecords[i][field] === undefined) {
+                    alertRecords[i][field] = sec;
+                    recordYear = alertRecords[i].year;
+                    found = true;
+                }
+                break;
+            }
+        }
+        if (found) {
+            saveAlertRecords(recordYear);
+            addLog('已记录' + (field === 'responseTime' ? '响应' : '处理') + '时长: ' + sec + '秒', 'success');
         }
     }
 
@@ -1781,7 +1850,8 @@
                 startAlarmLoop(audioPath, function(playSuccess, error) {
                     if (playSuccess) {
                         isPlaying = true;
-                        addLog('开始原生循环播放警报铃声，点击"我知道了"停止', 'success');
+                        startAlertTimer();   // 警报开始播放，启动计时
+                        addLog('开始原生循环播放警报铃声，可静音或关闭', 'success');
                         updateStatusDisplay();
                     } else {
                         isPlaying = false;
@@ -1793,7 +1863,7 @@
             });
 
             // 显示提醒对话框（如果还没有显示）
-            if (!isDialogShowing) {
+            if (!isAlertDialogOpen) {
                 showAlertDialog(smsContent);
             }
 
@@ -1806,35 +1876,110 @@
         }
     }
 
-    // 显示提醒对话框
+    // 显示提醒对话框（自绘警报弹窗 frame，内含实时计时）
     function showAlertDialog(smsContent) {
         // 如果已经有对话框在显示，则不重复显示
-        if (isDialogShowing) {
-            addLog('对话框已在显示中，跳过重复显示', 'warning');
+        if (isAlertDialogOpen) {
+            addLog('警报弹窗已在显示中，跳过重复显示', 'warning');
             return;
         }
-        
-        isDialogShowing = true;
-        api.alert({
-            title: '【紧急】接收到短信提醒',
-            msg: '短信内容：' + smsContent,
-            buttons: ['我知道了']
-        }, function(ret) {
-            // 用户点击后停止播放
-            isDialogShowing = false; // 重置对话框状态
-            if (isPlaying) {
-                stopAlarmLoop();
-                isPlaying = false;
-                addLog('用户点击确认，停止警报铃声', 'success');
-                updateStatusDisplay();
-                // 确保恢复原始音量
-                restoreOriginalVolume();
-            }
-            // 终止通知推送触发的循环震动和闪光灯闪烁（即使铃声已停，震动/闪光可能仍在进行）
-            stopVibrateFlash();
-            // 兜底：手动点击确认时也重置 JS 兜底计数器（防止 stopAlarmLoop 异常时残留）
-            __jsReplayCount = 0;
+
+        isAlertDialogOpen = true;
+        api.openFrame({
+            name: 'alertDialogFrame',
+            url: './test_SMS_alert_dialog.html',
+            rect: { x: 0, y: 0, w: 'auto', h: 'auto' },
+            bounces: false,
+            bgColor: 'rgba(0,0,0,0)',
+            vScrollBarEnabled: false,
+            hScrollBarEnabled: false,
+            pageParam: { smsContent: smsContent }
         });
+    }
+
+    // 静音：只停铃声/震动/闪光灯，计时继续
+    function onAlertDialogMute() {
+        if (isPlaying) {
+            stopAlarmLoop();
+            isPlaying = false;
+            addLog('用户点击静音，停止铃声但计时继续', 'success');
+            updateStatusDisplay();
+            restoreOriginalVolume();
+        }
+        stopVibrateFlash();
+        __jsReplayCount = 0;
+        isAlertMuted = true;
+        // 记录响应时长（响铃→静音），仅在首次静音时回填
+        fillAlertDuration('responseTime');
+        try {
+            api.execScript({
+                frameName: 'alertDialogFrame',
+                script: 'if(typeof setMutedState === "function") setMutedState(true);'
+            });
+        } catch (e) {}
+    }
+
+    // 恢复警报（静音后重新播放，计时不重置）
+    function onAlertDialogUnmute() {
+        if (!isAlertMuted) return;
+        isAlertMuted = false;
+
+        var audioPath = 'widget://res/' + selectedSound;
+        var alertVolumePercent = document.getElementById('alertVolume').value;
+        var alertVolume = alertVolumePercent / 100;
+        saveAndSetVolume(alertVolume, function(success) {
+            if (!success) {
+                addLog('恢复警报时音量设置失败', 'error');
+                return;
+            }
+            startAlarmLoop(audioPath, function(playSuccess) {
+                if (playSuccess) {
+                    isPlaying = true;
+                    addLog('已恢复警报铃声', 'success');
+                    updateStatusDisplay();
+                    try {
+                        api.execScript({
+                            frameName: 'alertDialogFrame',
+                            script: 'if(typeof setMutedState === "function") setMutedState(false);'
+                        });
+                    } catch (e) {}
+                } else {
+                    addLog('恢复警报铃声失败', 'error');
+                }
+            });
+        });
+    }
+
+    // 完全关闭：停一切 + 计时清零 + 关弹窗
+    function onAlertDialogConfirm() {
+        isAlertDialogOpen = false;
+        try { api.closeFrame({ name: 'alertDialogFrame' }); } catch (e) {}
+
+        // 回填处理时长；若用户未静音直接确认，则响应时长同步记为处理时长
+        // （fillAlertDuration 内部会跳过已填写的字段，故顺序调用即可）
+        if (alertStartTime) {
+            fillAlertDuration('responseTime');
+            fillAlertDuration('handleTime');
+        }
+
+        if (isPlaying) {
+            stopAlarmLoop();
+            isPlaying = false;
+        }
+        stopAlertTimer();           // 计时清零
+        stopVibrateFlash();
+        __jsReplayCount = 0;
+        currentAlertRecordId = null; // 事件结束，清空记录引用
+        addLog('用户点击已处理，关闭警报', 'success');
+        updateStatusDisplay();
+        restoreOriginalVolume();
+    }
+
+    // 返回键关闭弹窗（警报继续，计时继续）
+    function onAlertDialogCancel() {
+        isAlertDialogOpen = false;
+        try { api.closeFrame({ name: 'alertDialogFrame' }); } catch (e) {}
+        addLog('用户关闭警报弹窗，警报与计时继续', 'info');
     }
 
     // 显示错误信息
@@ -2204,6 +2349,11 @@
                     throw new Error('audioStreamer.stop 调用失败');
                 }
                 isPlaying = false;
+                // 手动停止也视为处理完成，回填响应/处理时长
+                fillAlertDuration('responseTime');
+                fillAlertDuration('handleTime');
+                stopAlertTimer();
+                currentAlertRecordId = null;
                 addLog('警报铃声已手动停止', 'success');
                 updateStatusDisplay();
 
@@ -2219,6 +2369,7 @@
                 addLog('停止警报铃声失败: ' + e.message, 'error');
                 // 即使停止失败，也要重置状态
                 isPlaying = false;
+                stopAlertTimer();
                 updateStatusDisplay();
                 // 确保恢复原始音量
                 restoreOriginalVolume();
@@ -2903,7 +3054,9 @@
             year: now.getFullYear(),
             month: now.getMonth() + 1,
             day: now.getDate(),
-            weekday: now.getDay()
+            weekday: now.getDay(),
+            responseTime: null, // 响应时长（秒）：响铃→静音（无静音则为响铃→已处理）
+            handleTime: null    // 处理时长（秒）：响铃→已处理
         };
 
 
@@ -2918,6 +3071,9 @@
         }
         // 使用已准备的记录对象
         alertRecords.push(record);
+
+        // 记录当前响铃对应的记录 id，供静音/确认时回填响应、处理时长
+        currentAlertRecordId = record.id;
 
         // 保存到对应年份的 prefs key，避免跨年保存时
         // currentYear 与 record.year 不一致导致数据丢失

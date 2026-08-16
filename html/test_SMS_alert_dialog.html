@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
+    <title>紧急警报</title>
+    <style>
+        * { margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+        html, body { height: 100%; overflow: hidden; }
+
+        /* 遮罩：偏红黑色，强化紧急氛围 */
+        .alert-mask {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(40, 0, 0, 0.6); z-index: 1;
+        }
+
+        .alert-panel {
+            position: fixed; left: 50%; top: 50%;
+            transform: translate(-50%, -50%);
+            width: 84%; max-width: 340px;
+            background: #fff; border-radius: 16px;
+            z-index: 2; text-align: center;
+            padding: 26px 22px 20px;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+            border-top: 5px solid #d93025;
+        }
+
+        /* 警示图标：红色脉冲动画，传达"正在进行中" */
+        .alert-icon {
+            font-size: 52px;
+            line-height: 1;
+            margin-bottom: 10px;
+            animation: alert-pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes alert-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.12); opacity: 0.82; }
+        }
+
+        .alert-title {
+            font-size: 19px; font-weight: bold; color: #d93025;
+            margin-bottom: 12px; letter-spacing: 1px;
+        }
+
+        /* 计时器：超大醒目，等宽数字防跳动 */
+        .alert-timer {
+            font-size: 52px; font-weight: bold; color: #d93025;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 2px; line-height: 1.1;
+            margin: 4px 0 2px;
+        }
+        .alert-timer-label {
+            font-size: 13px; color: #8e8e93; margin-bottom: 14px;
+        }
+
+        /* 静音状态徽标（与 alert-timer-label 同高度，切换时窗口高度不跳变） */
+        .alert-muted-badge {
+            display: none;
+            font-size: 12px; color: #fff; background: #f2994a;
+            border-radius: 12px; padding: 3px 12px;
+            margin: 0 auto 14px; width: fit-content;
+            line-height: 18px;
+        }
+        .alert-muted-badge.show { display: inline-block; }
+
+        .alert-content {
+            font-size: 13px; color: #333; line-height: 1.6;
+            max-height: 96px; overflow-y: auto;
+            text-align: left; background: #f7f7f8;
+            border-radius: 8px; padding: 10px 12px; margin-bottom: 18px;
+            word-break: break-all;
+        }
+
+        /* 双按钮区 */
+        .alert-btns { display: flex; flex-direction: column; gap: 10px; }
+        .btn-primary {
+            width: 100%; padding: 13px 0;
+            background: #d93025; color: #fff; border: none;
+            border-radius: 8px; font-size: 16px; font-weight: 600;
+        }
+        .btn-primary:active { background: #b52a20; }
+        .btn-secondary {
+            width: 100%; padding: 13px 0;
+            background: #fff; color: #d93025; border: 1.5px solid #d93025;
+            border-radius: 8px; font-size: 16px; font-weight: 600;
+        }
+        .btn-secondary:active { background: #fdecea; }
+    </style>
+</head>
+<body>
+    <div class="alert-mask"></div>
+    <div class="alert-panel">
+        <div class="alert-icon" id="alertIcon">🚨</div>
+        <div class="alert-title">紧急短信提醒</div>
+        <div class="alert-timer" id="alertTimer">00:00</div>
+        <div class="alert-timer-label" id="alertTimerLabel">警报已持续</div>
+        <div class="alert-muted-badge" id="mutedBadge">🔇 已静音，仍在计时</div>
+        <div class="alert-content" id="alertContent"></div>
+        <div class="alert-btns">
+            <button class="btn-secondary" id="muteBtn" onclick="onMute()">🔇 静音（继续计时）</button>
+            <button class="btn-primary" onclick="onConfirm()">✅ 已处理，关闭警报</button>
+        </div>
+    </div>
+    <script src="../script/api.js"></script>
+    <script>
+        apiready = function () {
+            var content = (api.pageParam && api.pageParam.smsContent) || '无内容';
+            document.getElementById('alertContent').textContent = content;
+
+            // 返回键 = 仅关闭弹窗，警报与计时继续（紧急警报不应被误触返回键就停）
+            api.addEventListener({
+                name: 'keyback'
+            }, function(ret, err) {
+                onCancel();
+            });
+        };
+
+        function formatElapsed(sec) {
+            var h = Math.floor(sec / 3600);
+            var m = Math.floor((sec % 3600) / 60);
+            var s = sec % 60;
+            var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+            if (h > 0) return pad(h) + ':' + pad(m) + ':' + pad(s);
+            return pad(m) + ':' + pad(s);
+        }
+
+        // 主页面每秒调用，刷新计时显示
+        function updateTimerDisplay(elapsedSec) {
+            document.getElementById('alertTimer').textContent = formatElapsed(elapsedSec);
+        }
+
+        // 主页面调用，切换"已静音"状态
+        function setMutedState(muted) {
+            var badge = document.getElementById('mutedBadge');
+            var label = document.getElementById('alertTimerLabel');
+            var muteBtn = document.getElementById('muteBtn');
+            var icon = document.getElementById('alertIcon');
+            var panel = document.querySelector('.alert-panel');
+            var timer = document.getElementById('alertTimer');
+            if (muted) {
+                badge.classList.add('show');
+                label.style.display = 'none';  // 静音后隐藏"警报已持续"，只保留橙色徽标，避免两行重叠
+                muteBtn.textContent = '🔊 恢复警报';
+                muteBtn.onclick = onUnmute;
+                icon.textContent = '🔇';
+                panel.style.borderTopColor = '#f2994a';
+                timer.style.color = '#f2994a';
+            } else {
+                badge.classList.remove('show');
+                label.style.display = '';      // 恢复显示"警报已持续"
+                muteBtn.textContent = '🔇 静音（继续计时）';
+                muteBtn.onclick = onMute;
+                icon.textContent = '🚨';
+                panel.style.borderTopColor = '#d93025';
+                timer.style.color = '#d93025';
+            }
+        }
+
+        function onMute() { api.sendEvent({ name: 'alertDialogMute' }); }
+        function onUnmute() { api.sendEvent({ name: 'alertDialogUnmute' }); }
+        function onConfirm() { api.sendEvent({ name: 'alertDialogConfirm' }); }
+        function onCancel() { api.sendEvent({ name: 'alertDialogCancel' }); }
+    </script>
+</body>
+</html>
