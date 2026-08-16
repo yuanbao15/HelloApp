@@ -49,6 +49,11 @@
             border-radius: 8px;
             min-width: 60px;
             background: transparent;
+            /* 禁止 Android WebView 默认点按高亮（点击"更多"弹出原生 actionSheet 时事件流被中断，
+               高亮会残留成灰色阴影区块，需再次点击其他 tab 才消失）。
+               同时作用于子元素：点击 target 实际是 .nav-text/.nav-icon */
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
         }
         
         .nav-item.active {
@@ -70,6 +75,26 @@
         
         .nav-item:active:not(.active) {
             background: transparent;
+        }
+
+        /* ===== 彻底压制 APICloud/老 Android WebView 给可点击元素注入的 tap 高亮 =====
+           现象：点"更多"弹出原生 actionSheet 后，"更多"按钮上残留一层淡淡的半透明灰幕
+           （矩形、盖在按钮上、能看到底下内容），必须点其他导航按钮（产生新触摸事件）才消失。
+           原因：APICloud WebView 会给可点击元素注入类似 a:active { background: rgba(0,0,0,0.06) }
+           的默认样式，原生弹窗中断 tap 事件流后 :active 伪类挂起，残留该灰幕。
+           修复：rgba(0,0,0,0) + !important 全局压制，比 transparent 更明确、优先级最高；
+           同时压制 :active/:hover/:focus 伪类，防止伪类挂起残留。 */
+        .nav-item,
+        .nav-item * {
+            -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+            -webkit-touch-callout: none !important;
+        }
+        .nav-item:active:not(.active),
+        .nav-item:hover:not(.active),
+        .nav-item:focus:not(.active) {
+            background: transparent !important;
+            background-color: transparent !important;
+            outline: none !important;
         }
         
         .nav-icon {
@@ -224,19 +249,22 @@
                     });
                 } else if (currentPage === 'statistics') {
 
-                    // 先让统计页判断是否处于多选模式，是则退出多选模式
+                    // 让统计页自己判断：有弹窗/多选就拦截（goBack 内部 return），否则统计页发事件通知主框架回首页
                     console.log('统计页-触发了返回');
                     api.execScript({
-                        frameName: 'statisticsFrame', // 统计页frame的name
-                        script: 'goBack();' // goBack方法未执行待解决-已实现
+                        frameName: 'statisticsFrame',
+                        script: 'goBack();'
                     });
-
-                    // 统计页，直接回到首页
-                    // switchPage('home');
                 } else if (currentPage === 'more') {
                     // 新增：从更多返回上个页面
                     console.log('prevPage: ', prevPage);
                     console.log('更多页-触发了返回');
+
+                    // 优先：自制"更多"菜单还开着时，按返回只关闭菜单并恢复页面状态
+                    if (isMoreSheetOpen) {
+                        closeMoreSheet();
+                        return false;
+                    }
 
                     // 先尝试关闭可能存在的关于页面
                     if (pageFrames.about) {
@@ -281,12 +309,49 @@
             }
         
             
+            // 监听统计页"回首页"请求（统计页 goBack 在非拦截态时通过 sendEvent 通知，可靠跨 frame）
+            api.addEventListener({
+                name: 'statisticsGoHome'
+            }, function(ret, err) {
+                console.log('收到统计页回首页请求');
+                if (currentPage === 'statistics') {
+                    switchPage('home');
+                }
+            });
+
+            // 监听"更多"菜单 frame 的事件
+            // 菜单取消：用户点了取消/遮罩，恢复页面状态
+            api.addEventListener({ name: 'moreSheetCancel' }, function() {
+                onMoreSheetCancel();
+            });
+            // 菜单选中某项：执行对应功能（currentPage 保持 'more'，子页面关闭后才恢复）
+            // 注意：sendEvent 的 extra 在接收方通过 ret.value 获取（不是 ret.extra）
+            api.addEventListener({ name: 'moreSheetAction' }, function(ret) {
+                var val = ret && ret.value ? ret.value : null;
+                var idx = val ? val.index : undefined;
+                if (idx !== undefined && idx !== null) {
+                    onMoreSheetAction(Number(idx));
+                }
+            });
+
             // 监听frame关闭事件
             api.addEventListener({
                 name: 'frameClosed'
             }, function(ret, err) {
                 console.log('Frame关闭事件：', ret);
-                if (ret && ret.name === 'statisticsFrame') {
+                if (ret && ret.name === 'moreSheetFrame') {
+                    // 更多菜单 frame 已关闭。
+                    // 选中某项时 isMoreSheetOpen 已被 onMoreSheetAction 设为 false（保持 more 态等子页面关闭）；
+                    // 取消时 isMoreSheetOpen 已被 onMoreSheetCancel 设为 false；
+                    // 返回键关闭时 isMoreSheetOpen 仍为 true，此时恢复页面状态。
+                    if (isMoreSheetOpen) {
+                        isMoreSheetOpen = false;
+                        if (currentPage === 'more') {
+                            currentPage = prevPage;
+                            updateNavigationState(currentPage);
+                        }
+                    }
+                } else if (ret && ret.name === 'statisticsFrame') {
                     console.log('统计页面frame已关闭，切换到首页');
                     currentPage = 'home';
                     pageFrames.statistics = null;
@@ -515,62 +580,92 @@
             }
         }
         
-        // 显示更多选项
+        // ===== "更多"菜单（独立 frame，原生层，能盖在 homeFrame/statisticsFrame 之上）=====
+        // 用 frame 实现：底层 frame 不用隐藏，遮罩半透明可看到原内容；
+        // 返回键焦点在主框架，不会被原生 actionSheet 吞掉。
+        var isMoreSheetOpen = false; // "更多"菜单 frame 是否打开
+
+        // 显示更多选项（打开菜单 frame）
         function showMoreOptions() {
-            api.actionSheet({
-                title: '更多选项',
-                cancelTitle: '取消',
-                destructiveTitle: '',
-                // 顺序：常用入口靠前；使用帮助放在"关于应用"和"检查更新"之间
-                buttons: ['关于应用', '使用帮助', '检查更新', '清除缓存', '导出数据', '导入数据', '打赏捐赠']
-            }, function(ret, err) {
-                console.log('actionSheet按钮索引', ret.buttonIndex);
-                if (ret && ret.buttonIndex !== 0) { // 0是取消
-                    switch(ret.buttonIndex) {
-                        case 1:
-                            showAboutApp();
-                            break;
-                        case 2:
-                            showHelpDoc();
-                            break;
-                        case 3:
-                            checkForUpdates();
-                            break;
-                        case 4:
-                            showClearCacheMenu();
-                            break;
-                        case 5:
-                            exportAllData();
-                            break;
-                        case 6:
-                            importAllData();
-                            break;
-                        case 7:
-                            api.openFrame({
-                                name: 'donateFrame',
-                                url: './test_SMS_donate.html',
-                                rect: {
-                                    x: 0,
-                                    y: 0,
-                                    w: 'auto',
-                                    h: 'auto'
-                                },
-                                bounces: false,
-                                bgColor: 'rgba(0,0,0,0)',
-                                vScrollBarEnabled: false,
-                                hScrollBarEnabled: false,
-                                pageParam: {}
-                            });
-                            pageFrames.donate = 'donateFrame';
-                            break;
-                    }
-                } else {
-                    // 用户点击了取消或actionSheet外部，恢复之前的页面状态
-                    console.log('actionSheet取消，恢复页面状态');
-                    currentPage = prevPage;
-                    updateNavigationState(currentPage);
-                }
+            // 清除导航项点击残留
+            var navItems = document.querySelectorAll('.nav-item');
+            for (var ni = 0; ni < navItems.length; ni++) {
+                navItems[ni].blur();
+                navItems[ni].style.background = '';
+            }
+            isMoreSheetOpen = true;
+            api.openFrame({
+                name: 'moreSheetFrame',
+                url: './test_SMS_more_sheet.html',
+                rect: { x: 0, y: 0, w: 'auto', h: 'auto' },
+                bounces: false,
+                bgColor: 'rgba(0,0,0,0)',
+                vScrollBarEnabled: false,
+                hScrollBarEnabled: false
             });
+        }
+
+        // 关闭"更多"菜单 frame（按返回键时主框架调用）
+        function closeMoreSheet() {
+            if (!isMoreSheetOpen) return;
+            // 直接关闭菜单 frame（frameClosed 事件会触发 onMoreSheetCancel 恢复状态）
+            try { api.closeFrame({ name: 'moreSheetFrame' }); } catch (e) {}
+        }
+
+        // "更多"菜单取消（用户点了取消或遮罩）：关闭菜单 frame，恢复页面状态
+        function onMoreSheetCancel() {
+            if (!isMoreSheetOpen) return;
+            isMoreSheetOpen = false;
+            // 关闭菜单 frame
+            try { api.closeFrame({ name: 'moreSheetFrame' }); } catch (e) {}
+            if (currentPage === 'more') {
+                currentPage = prevPage;
+                updateNavigationState(currentPage);
+            }
+        }
+
+        // "更多"菜单选中某项：关闭菜单 frame，再执行对应功能
+        // 注意：不在这里恢复 currentPage（保持 'more'），等子页面关闭后才恢复，
+        // 否则子页面里按返回会走 home 分支弹退出确认（而非回到更多菜单前的页面）
+        function onMoreSheetAction(index) {
+            if (!isMoreSheetOpen) return;
+            isMoreSheetOpen = false;
+            // 先关闭菜单 frame，再执行功能（避免菜单 frame 还在时打开子页面被遮挡）
+            try { api.closeFrame({ name: 'moreSheetFrame' }); } catch (e) {}
+            // currentPage 保持 'more'，子页面（aboutFrame/donateFrame）关闭后由 frameClosed 事件恢复
+            switch (index) {
+                case 1:
+                    showAboutApp();
+                    break;
+                case 2:
+                    showHelpDoc();
+                    break;
+                case 3:
+                    checkForUpdates();
+                    break;
+                case 4:
+                    showClearCacheMenu();
+                    break;
+                case 5:
+                    exportAllData();
+                    break;
+                case 6:
+                    importAllData();
+                    break;
+                case 7:
+                    api.openFrame({
+                        name: 'donateFrame',
+                        url: './test_SMS_donate.html',
+                        rect: { x: 0, y: 0, w: 'auto', h: 'auto' },
+                        bounces: false,
+                        bgColor: 'rgba(0,0,0,0)',
+                        vScrollBarEnabled: false,
+                        hScrollBarEnabled: false,
+                        pageParam: {}
+                    });
+                    pageFrames.donate = 'donateFrame';
+                    break;
+            }
         }
         
         // 更新导航状态-当前页面为高亮状态

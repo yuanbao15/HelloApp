@@ -727,10 +727,13 @@
             return;
         } else {
             console.log('关闭统计页面，回到首页');
-            // 非多选模式下需要回到首页，不是直接关闭frame，而是让主框架处理页面切换
-            api.execScript({
-                script: 'switchPage(\'home\')'
-            })
+            // 非拦截态下需要回到首页。改用 sendEvent 通知主框架切换（可靠跨 frame 通信），
+            // 替代原来无 frameName 的 execScript——那条路径行为不稳定：
+            // 正常返回碰巧在调用方(主框架)上下文执行而生效，弹出过 actionSheet 后焦点态改变，
+            // execScript 退回到统计页自身上下文执行（找不到 switchPage 静默失败），导致需返回两次。
+            api.sendEvent({
+                name: 'statisticsGoHome'
+            });
         }
     }
     
